@@ -122,8 +122,8 @@ var BFClassMask = []uint32{0x7FF, 0x7FFF, 0x7FFFF, 0x7FFFFF, 0x7FFFFFF, 0xFFFFFF
 var Bits = []uint8{0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80}
 
 var bitCount16 = [64 * KB]uint8{}
-var bfEstCache = [256][256]uint16{}
-var entropy64Int = [65]uint64{}
+//var bfEstCache = [256][256]uint16{}
+//var entropy64Int = [65]uint64{}
 
 func NewSdbfConf(threadCount uint32, warnings uint32, maxElemCt uint32, maxElemCtDD uint32) *sdbfConf {
 	sc := &sdbfConf{
@@ -171,9 +171,9 @@ func (sc *sdbfConf) initBitCount16() {
 Entropy lookup table setup--int64 version (to be called once)
 */
 func (sc *sdbfConf) entr64TableInitInt() {
-	for i := 0; i <= 64; i++ {
+	for i := 1; i <= 64; i++ {
 		p := float64(i) / 64
-		entropy64Int[i] = uint64((-p * (math.Log(p) / math.Log(2)) / 6) * EntrScale)
+		sc.Entropy64Int[i] = uint64((-p * (math.Log(p) / math.Log(2)) / 6) * EntrScale)
 	}
 }
 
@@ -181,7 +181,7 @@ func (sc *sdbfConf) entr64TableInitInt() {
 Baseline entropy computation for a 64-byte buffer--int64 version (to be called periodically)
 */
 func (sc *sdbfConf) entr64InitInt(buffer []uint8, ascii []uint8) uint64 {
-	// todo: skip reset ascii, should be already zero
+	memsetU8(ascii, 0)
 	for i := 0; i < 64; i++ {
 		ascii[buffer[i]]++
 	}
@@ -204,6 +204,9 @@ func (sc *sdbfConf) entr64IncInt(prevEntropy uint64, buffer []uint8, ascii []uin
 
 	oldCharCnt := ascii[buffer[0]]
 	newCharCnt := ascii[buffer[64]]
+
+	ascii[buffer[0]]--
+	ascii[buffer[64]]++
 
 	if oldCharCnt == newCharCnt+1 {
 		return prevEntropy

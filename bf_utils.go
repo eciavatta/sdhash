@@ -27,13 +27,10 @@ func bfSha1Insert(bf []uint8, bfClass uint8, sha1Hash [5]uint32) uint32 {
  * it returns 0; otherwise, proceeds with the rest of the computation.
  */
 func bfBitCountCut256(bFilter1, bFilter2 []uint8, cutOff uint32, slack uint32) uint32 {
-	var size int
-	if len(bFilter1) > len(bFilter2) {
-		size = len(bFilter2)
-	} else {
-		size = len(bFilter1)
+	common := make([]uint8, 256)
+	for i := 0; i < 256; i++ {
+		common[i] = bFilter1[i] & bFilter2[i]
 	}
-	common := make([]uint8, size)
 
 	return uint32(popcount.CountBytes(common))
 }

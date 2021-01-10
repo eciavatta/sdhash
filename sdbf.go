@@ -2,8 +2,8 @@ package sdhash
 
 import (
 	"encoding/base64"
-	"encoding/binary"
 	"fmt"
+	"github.com/tmthrgd/go-popcount"
 	"strings"
 )
 
@@ -164,13 +164,9 @@ func (sd *sdbf) CloneFilter(position uint32) []uint8 {
  * Pre-compute Hamming weights for each BF and adds them to the SDBF descriptor.
  */
 func (sd *sdbf) computeHamming() int {
-	var pos uint32
 	sd.Hamming = make([]uint16, sd.bfCount)
 	for i := uint32(0); i < sd.bfCount; i++ {
-		for j := 0; j <= BfSize / 2; j++ {
-			sd.Hamming[i] += uint16(bitCount16[binary.BigEndian.Uint16(sd.Buffer[2*pos:2*pos+2])])
-			pos++
-		}
+		sd.Hamming[i] = uint16(popcount.CountBytes(sd.Buffer[sd.bfSize*i:sd.bfSize*(i+1)]))
 	}
 	return 0
 }

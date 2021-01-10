@@ -68,7 +68,7 @@ func NewBloomFilter(size uint64, hashCount uint16, maxElem uint64, maxFP float64
 		return nil, errors.New("invalid size")
 	}
 
-	bf.BF = make([]uint8, 0, size)
+	bf.BF = make([]uint8, size)
 
 	return bf, nil
 }
@@ -138,7 +138,7 @@ func NewBloomFilterFromIndexFile(indexFileName string) (*bloomFilter, error) {
 		return nil, errors.New("failed to read bf compressed data")
 	}
 
-	bf.BF = make([]uint8, 0, bfSize)
+	bf.BF = make([]uint8, bfSize)
 	if n, err := lz4.UncompressBlock(bfComp, bf.BF); err != nil || uint64(n) != bfSize {
 		return nil, err
 	}

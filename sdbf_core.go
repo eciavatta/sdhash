@@ -54,7 +54,7 @@ func (sd *sdbf) genChunkScores(chunkRanks []uint16, chunkSize uint64, chunkScore
 			minPos = i
 			minRank = chunkRanks[minPos]
 			for j := i+1; j < i+popWin; j++ {
-				if chunkRanks[j] < minRank && chunkRanks[i] > 0 {
+				if chunkRanks[j] < minRank && chunkRanks[j] > 0 {
 					minRank = chunkRanks[j]
 					minPos = j
 				} else if minPos == j-1 && chunkRanks[j] == minRank {
@@ -108,7 +108,7 @@ func (sd *sdbf) genChunkHash(fileBuffer []uint8, chunkPos uint64, chunkScores []
 				lastCount++
 				bigfiCount++
 				if lastCount == sd.MaxElem {
-					// currBf += sd.bfSize here: WTF
+					currBf = currBf[sd.bfSize:]
 					bfCount++
 					lastCount = 0
 				}
@@ -377,7 +377,7 @@ func (sd *sdbf) sdbfMaxScore(refSdbf *sdbf, refIndex uint32, targetSdbf *sdbf) f
 		e2Cnt := targetSdbf.Hamming[i]
 		// Max/min number of matching bits & zero cut off
 		var maxEst uint16
-		if e1Cnt > e2Cnt {
+		if e1Cnt < e2Cnt {
 			maxEst = e1Cnt
 		} else {
 			maxEst = e2Cnt
