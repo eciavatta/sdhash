@@ -35,15 +35,6 @@ var cutoffs = []uint32{
 	246, 242, 238, 235, 231, 228, 225, 221, 218,
 }
 
-type BloomFilterMessage struct {
-	BfSize uint64
-	MaxElem uint64
-	ElemCount uint64
-	Id uint32
-	Name string
-	Filter []uint64
-}
-
 type bloomFilter struct {
 	BF          []uint8 // Beginning of the BF
 	Hamming     uint16  // weight of this bf

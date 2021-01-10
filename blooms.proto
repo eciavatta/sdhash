@@ -1,0 +1,18 @@
+syntax = "proto3";
+package sdhash;
+
+message BloomFilter {
+    uint64 bf_size = 1;
+    uint64 max_elem = 2;
+    uint64 elem_count = 3;
+    uint32 id = 4;
+    string name = 5;
+    repeated fixed64 filter = 6;
+}
+
+message BloomVector {
+    int32 filter_count = 1;
+    string name = 2;
+    int32 id = 3;
+    uint64 filesize = 4;
+}

@@ -1,16 +1,10 @@
 package sdhash
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
 )
-
-type BloomVectorMessage struct {
-	FilterCount int32
-	Name string
-	Id int32
-	FileSize uint64
-}
 
 type bloomVector struct {
 	Items []*bloomFilter
@@ -19,23 +13,25 @@ type bloomVector struct {
 	objName string
 }
 
-func NewBloomVector(bvm BloomVectorMessage) *bloomVector {
+func NewBloomVector(bvm *BloomVector) *bloomVector {
 	return &bloomVector{
 		Items: make([]*bloomFilter, 0),
 		objName: bvm.Name,
 		FilterCount: int(bvm.FilterCount),
-		FileSize: bvm.FileSize,
+		FileSize: bvm.Filesize,
 	}
 }
 
-func (bv *bloomVector) AddFilter(srcFilter BloomFilterMessage) {
-	//bf := make([]uint8, srcFilter.BfSize)
-	//for j := 0; j < len(srcFilter.Filter); j++ {
-	//	bf[j] = srcFilter.Filter[j]
-	//
-	//}
-
-	// TODO:
+func (bv *bloomVector) AddFilter(srcFilter *BloomFilter) {
+	bf := make([]uint8, srcFilter.BfSize)
+	for j := 0; j < len(srcFilter.Filter); j++ {
+		binary.BigEndian.PutUint64(bf[j*8:(j+1)*8], srcFilter.Filter[j])
+	}
+	tmp := NewBloomFilterFromExistingData(bf, int(srcFilter.Id), int(srcFilter.ElemCount), 0)
+	tmp.SetName(srcFilter.Name)
+	tmp.ComputeHamming()
+	tmp.MaxElem = srcFilter.MaxElem
+	bv.Items = append(bv.Items, tmp)
 }
 
 func (bv *bloomVector) Details() string {

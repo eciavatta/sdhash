@@ -1,7 +1,6 @@
 package sdhash
 
 import (
-	"encoding/binary"
 	"github.com/tmthrgd/go-popcount"
 )
 

@@ -20,6 +20,7 @@ type sdbfConf struct {
 const (
 	MaxThreadsCount = 512
 	KB              = 1024
+	MB              = KB * KB
 	BfSize          = 256
 	Bins            = 1000
 	EntrPower       = 10
@@ -32,6 +33,10 @@ const (
 	MaxElemCountDD = 192
 	BigFilter      = 16384
 	BigFilterElem  = 8738
+
+	MagicStream    = "sdbf"
+	SdbfVersion    = 3
+	MagicDD        = "sdbf-dd"
 
 	fpThreshold = 4
 )

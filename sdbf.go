@@ -1,6 +1,7 @@
 package sdhash
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"strings"
@@ -38,38 +39,49 @@ type sdbf struct {
 	fastMode      bool
 }
 
+/**
+  \internal
+  Initialize static configuration object with sensible defaults.
+*/
 var config = NewSdbfConf(1, FlagOff, MaxElemCount, MaxElemCountDD)
 
+/**
+  Create new sdbf from file.  dd_block_size turns on "block" mode.
+  \param filename file to hash
+  \param dd_block_size size of block to process file with. 0 is off.
+
+  \throws exception if file cannot be opened or too small
+*/
 func NewSdbf(filename string, ddBlockSize uint32) (*sdbf, error) {
 	buffer, err := processFile(filename, MinFileSize)
 	if err != nil {
 		return nil, err
 	}
 
-	sd := &sdbf{
-		hashName: filename,
-		bfSize: config.BfSize,
-		hashCount: 5,
-		mask: BFClassMask[0],
-		bfCount: 1,
-		BigFilters: make([]*bloomFilter, 0),
-		origFileSize: uint64(len(buffer)),
-	}
-	bf, err := NewBloomFilter(BigFilter, 5, BigFilterElem, 0.01)
-	if err != nil {
-		return nil, err
-	}
-	sd.BigFilters = append(sd.BigFilters, bf)
-
-	// todo: continue
-	if ddBlockSize == 0 {
+	sd := createSdbf(filename)
+	fileSize := uint64(len(buffer))
+	sd.origFileSize = fileSize
+	if ddBlockSize == 0 { // stream mode
 		sd.MaxElem = config.MaxElem
-	} else {
+		sd.genChunkSdbf(buffer, fileSize, 32 * MB)
+	} else { // block mode
 		sd.MaxElem = config.MaxElemDd
+		ddBlockCnt := fileSize / uint64(ddBlockSize)
+		if fileSize % uint64(ddBlockSize) >= MinFileSize {
+			ddBlockCnt++
+		}
+		sd.bfCount = uint32(ddBlockCnt)
+		sd.ddBlockSize = ddBlockSize
+		sd.Buffer = make([]uint8, ddBlockCnt * uint64(config.BfSize))
+		sd.elemCounts = make([]uint16, ddBlockCnt)
+		sd.genBlockSdbfMt(buffer, fileSize, uint64(ddBlockSize))
 	}
+	sd.computeHamming()
 
-	return nil, nil
+	return sd, nil
 }
+
+
 
 /**
   Returns the name of the file or data this sdbf represents.
@@ -95,8 +107,44 @@ func (sd *sdbf) InputSize() uint64 {
 }
 
 func (sd *sdbf) Compare(other *sdbf, sample uint32) int32 {
-	// todo: skip output
-	return sd.sdbfScore(sd, other, sample)
+	// here: skip output
+	return int32(sd.sdbfScore(sd, other, sample))
+}
+
+/**
+  Encode this sdbf and return it as a string.
+  \returns std::string containing sdbf suitable for display or writing to file
+*/
+func (sd *sdbf) String() string {
+	var sb strings.Builder
+	if sd.elemCounts == nil {
+		sb.WriteString(fmt.Sprintf("%s:%02d:", MagicStream, SdbfVersion))
+		sb.WriteString(fmt.Sprintf("%d:%s:%d:sha1:", len(sd.hashName), sd.hashName, sd.origFileSize))
+		sb.WriteString(fmt.Sprintf("%d:%d:%x:", sd.bfSize, sd.hashCount, sd.mask))
+		sb.WriteString(fmt.Sprintf("%d:%d:%d:", sd.MaxElem, sd.bfCount, sd.lastCount))
+		qt, rem := sd.bfCount / 6, sd.bfCount % 6
+		b64Block := uint64(6*sd.bfSize)
+		var pos uint64
+		for i := uint32(0); i < qt; i++ {
+			sb.WriteString(base64.StdEncoding.EncodeToString(sd.Buffer[pos:pos+b64Block]))
+			pos += b64Block
+		}
+		if rem > 0 {
+			sb.WriteString(base64.StdEncoding.EncodeToString(sd.Buffer[pos:pos+uint64(rem*sd.bfSize)]))
+		}
+	} else {
+		sb.WriteString(fmt.Sprintf("%s:%02d:", MagicDD, SdbfVersion))
+		sb.WriteString(fmt.Sprintf("%d:%s:%d:sha1:", len(sd.hashName), sd.hashName, sd.origFileSize))
+		sb.WriteString(fmt.Sprintf("%d:%d:%x:", sd.bfSize, sd.hashCount, sd.mask))
+		sb.WriteString(fmt.Sprintf("%d:%d:%d:", sd.MaxElem, sd.bfCount, sd.ddBlockSize))
+		for i := uint32(0); i < sd.bfCount; i++ {
+			sb.WriteString(fmt.Sprintf(":%02x:", sd.elemCounts[i]))
+			sb.WriteString(base64.StdEncoding.EncodeToString(sd.Buffer[i*sd.bfSize:i*sd.bfSize + sd.bfSize]))
+		}
+	}
+	sb.WriteByte('\n')
+
+	return sb.String()
 }
 
 func (sd *sdbf) GetIndexResults() string {
@@ -130,7 +178,7 @@ func (sd *sdbf) computeHamming() int {
 /**
   get element count for comparisons
 */
-func (sd *sdbf) GetElemCount(mine *sdbf, index uint64) int32 {
+func GetElemCount(mine *sdbf, index uint64) int32 {
 	var ret uint32
 	if mine.elemCounts == nil {
 		if index < uint64(mine.bfCount) - 1 {
@@ -156,7 +204,7 @@ func (sd *sdbf) Fast() {
 	// for each filter
 	for i := uint32(0); i < sd.bfCount; i++ {
 		data := sd.CloneFilter(i)
-		tmp := NewBloomFilterFromExistingData(data, int(i), int(sd.GetElemCount(sd, uint64(i))), 0)
+		tmp := NewBloomFilterFromExistingData(data, int(i), int(GetElemCount(sd, uint64(i))), 0)
 		tmp.Fold(2)
 		tmp.ComputeHamming()
 		sd.Hamming[i] = uint16(tmp.Hamminglg)
@@ -165,7 +213,24 @@ func (sd *sdbf) Fast() {
 	sd.fastMode = true
 }
 
+func createSdbf(name string) *sdbf {
+	sd := &sdbf{
+		hashName: name,
+		bfSize: config.BfSize,
+		hashCount: 5,
+		mask: BFClassMask[0],
+		bfCount: 1,
+		BigFilters: make([]*bloomFilter, 0),
+	}
+	// trying for m/n = 8
+	if bf, err := NewBloomFilter(BigFilter, 5, BigFilterElem, 0.01); err != nil {
+		panic(err)
+	} else {
+		sd.BigFilters = append(sd.BigFilters, bf)
+	}
 
+	return sd
+}
 
 
 

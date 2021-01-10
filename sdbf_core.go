@@ -21,9 +21,9 @@ func (sd *sdbf) genChunkRanks(fileBuffer []uint8, chunkSize uint64, chunkRanks [
 	limit := int64(chunkSize) - int64(config.EntrWinSize)
 	if limit > 0 {
 		for ; offset < uint64(limit); offset++ {
-			if offset % uint64(config.BlockSize) == 0 {
+			if offset % uint64(config.BlockSize) == 0 { // Initial/sync entropy calculation
 				entropy = config.entr64InitInt(fileBuffer[offset:], ascii)
-			} else {
+			} else { // Incremental entropy update (much faster)
 				entropy = config.entr64IncInt(entropy, fileBuffer[offset-1:], ascii)
 			}
 			chunkRanks[offset] = uint16(Entr64Ranks[entropy>>EntrPower])
@@ -196,7 +196,7 @@ func (sd *sdbf) genBlockHash(fileBuffer []uint8, fileSize uint64, blockNum uint6
  * Generate SDBF hash for a buffer--stream version.
  */
 func (sd *sdbf) genChunkSdbf(fileBuffer []uint8, fileSize uint64, chunkSize uint64) {
-	if chunkSize > uint64(config.PopWinSize) {
+	if chunkSize <= uint64(config.PopWinSize) {
 		panic("chunkSize <= popWinSize")
 	}
 
@@ -316,7 +316,7 @@ func (sd *sdbf) sdbfScore(sdbf1 *sdbf, sdbf2 *sdbf, sample uint32) int {
 	}
 
 	if bfCount1 > sdbf2.bfCount || (bfCount1 == sdbf2.bfCount &&
-		(sd.GetElemCount(sdbf1, uint64(bfCount1)-1) > sd.GetElemCount(sdbf2, uint64(sdbf2.bfCount)-1) &&
+		(GetElemCount(sdbf1, uint64(bfCount1)-1) > GetElemCount(sdbf2, uint64(sdbf2.bfCount)-1) &&
 			strings.Compare(sdbf1.hashName, sdbf2.hashName) > 0)) {
 		sdbf1, sdbf2 = sdbf2, sdbf1
 		bfCount1 = sdbf1.bfCount
@@ -335,7 +335,7 @@ func (sd *sdbf) sdbfScore(sdbf1 *sdbf, sdbf2 *sdbf, sample uint32) int {
 		} else {
 			scoreSum += maxScore
 		}
-		if sd.GetElemCount(sdbf1, uint64(i)) < MinElemCount {
+		if GetElemCount(sdbf1, uint64(i)) < MinElemCount {
 			spartsect++
 		}
 	}
@@ -362,7 +362,7 @@ func (sd *sdbf) sdbfMaxScore(refSdbf *sdbf, refIndex uint32, targetSdbf *sdbf) f
 	var score, maxScore float64 = -1, -1
 	bfSize := refSdbf.bfSize
 
-	s1 := sd.GetElemCount(refSdbf, uint64(refIndex))
+	s1 := GetElemCount(refSdbf, uint64(refIndex))
 	if s1 < MinElemCount {
 		return 0
 	}
@@ -370,7 +370,7 @@ func (sd *sdbf) sdbfMaxScore(refSdbf *sdbf, refIndex uint32, targetSdbf *sdbf) f
 	e1Cnt := refSdbf.Hamming[refIndex]
 	for i := uint32(0); i < targetSdbf.bfCount; i++ {
 		bf2 := targetSdbf.Buffer[i*bfSize:]
-		s2 := sd.GetElemCount(targetSdbf, uint64(i))
+		s2 := GetElemCount(targetSdbf, uint64(i))
 		if refSdbf.bfCount >= 1 && s2 < MinElemCount {
 			continue
 		}
@@ -411,18 +411,25 @@ func (sd *sdbf) printIndexes(threshold uint32, matches []uint32, pos uint64) {
 	var strBuilder strings.Builder
 	for i := 0; i < count; i++ {
 		if matches[i] > threshold {
-			strBuilder.WriteString(fmt.Sprintf("%s [%v] |%s|%v\n", sd.Name(), pos, sd.info.setList[i] // todo: implement set))
+			strBuilder.WriteString(fmt.Sprintf("%s [%v] |%s|%v\n", sd.Name(), pos, sd.info.setList[i].Name(), matches[i]))
 			any = true
 		}
 	}
+	if any {
+		sd.indexResults += strBuilder.String()
+	}
 }
-
 
 func (sd *sdbf) checkIndexes(sha1 []uint32, matches []uint32) bool {
 	count := len(sd.info.setList)
 	any := false
 
 	for i := 0; i < count; i++ {
-		if sd.info.setList[i] // todo: implement set
+		if sd.info.setList[i].Index.QuerySha1(sha1) {
+			matches[i]++
+			any = true
+		}
 	}
+
+	return any
 }
