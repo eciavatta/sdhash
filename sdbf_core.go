@@ -148,7 +148,7 @@ func (sd *sdbf) genBlockHash(fileBuffer []uint8, fileSize uint64, blockNum uint6
 	match := make([]uint32, numIndexes)
 	var hashIndex int
 	for i := uint32(0); i < maxOffset-config.PopWinSize && hashCnt < config.MaxElemDd; i++ {
-		if uint32(chunkScores[i]) > threshold && (uint32(chunkScores[i]) == threshold && allowed > 0) {
+		if uint32(chunkScores[i]) > threshold || (uint32(chunkScores[i]) == threshold && allowed > 0) {
 			data := fileBuffer[blockNum*blockSize:] // Start of data
 			sha1Hash := u32sha1(data[i:i+config.PopWinSize])
 			bf := hashTo.Buffer[blockNum*uint64(hashTo.bfSize):] // BF to be filled
@@ -216,7 +216,7 @@ func (sd *sdbf) genChunkSdbf(fileBuffer []uint8, fileSize uint64, chunkSize uint
 		sd.genChunkRanks(fileBuffer[chunkSize*i:], chunkSize, chunkRanks, 0)
 		sd.genChunkScores(chunkRanks, chunkSize, chunkScores, scoreHisto[:])
 
-		// Calculate thresholding paremeters
+		// Calculate thresholding parameters
 		var sum uint32
 		for k := uint32(65); k >= config.Threshold; k-- {
 			if (sum <= sd.MaxElem) && (sum+uint32(scoreHisto[k]) > sd.MaxElem) {
@@ -254,11 +254,11 @@ func (sd *sdbf) threadGenBlockSdbf(index uint64, blockSize uint64, buffer []uint
 	chunkRanks := make([]uint16, blockSize)
 	chunkScores := make([]uint16, blockSize)
 
-	sd.genChunkRanks(buffer[blockSize*index:], blockSize, chunkRanks, 0)
+	sd.genChunkRanks(buffer[blockSize*index:blockSize*(index+1)], blockSize, chunkRanks, 0)
 	sd.genChunkScores(chunkRanks, blockSize, chunkScores, scoreHisto[:])
 	var k uint32
 	for k = 65; k >= config.Threshold; k-- {
-		if sum <= config.MaxElem && (sum + uint32(scoreHisto[k]) > config.MaxElemDd) {
+		if sum <= config.MaxElemDd && (sum + uint32(scoreHisto[k]) > config.MaxElemDd) {
 			break
 		}
 		sum += uint32(scoreHisto[k])
@@ -276,19 +276,19 @@ func (sd *sdbf) genBlockSdbfMt(fileBuffer []uint8, fileSize uint64, blockSize ui
 	qt := fileSize / blockSize
 	rem := fileSize % blockSize
 
-	hashPool := make([]chan bool, qt)
-	for i := range hashPool {
-		go sd.threadGenBlockSdbf(uint64(i), blockSize, fileBuffer, fileSize, hashPool[i])
+	ch := make(chan bool, qt)
+	for i := uint64(0); i < qt; i++ {
+		go sd.threadGenBlockSdbf(i, blockSize, fileBuffer, fileSize, ch)
 	}
-	for i := range hashPool {
-		<- hashPool[i]
+	for i := uint64(0); i < qt; i++ {
+		<- ch
 	}
 
-	for rem >= MinFileSize {
+	if rem >= MinFileSize {
 		chunkRanks := make([]uint16, blockSize)
 		chunkScores := make([]uint16, blockSize)
 
-		sd.genChunkRanks(fileBuffer[blockSize*qt:], rem, chunkRanks, 0)
+		sd.genChunkRanks(fileBuffer[blockSize*qt:blockSize*qt + rem], rem, chunkRanks, 0)
 		sd.genChunkScores(chunkRanks, rem, chunkScores, nil)
 		sd.genBlockHash(fileBuffer, fileSize, qt, chunkScores, blockSize, sd, uint32(rem), config.Threshold, int32(sd.MaxElem))
 	}

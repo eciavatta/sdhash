@@ -136,7 +136,7 @@ func (sd *sdbf) String() string {
 		sb.WriteString(fmt.Sprintf("%s:%02d:", MagicDD, SdbfVersion))
 		sb.WriteString(fmt.Sprintf("%d:%s:%d:sha1:", len(sd.hashName), sd.hashName, sd.origFileSize))
 		sb.WriteString(fmt.Sprintf("%d:%d:%x:", sd.bfSize, sd.hashCount, sd.mask))
-		sb.WriteString(fmt.Sprintf("%d:%d:%d:", sd.MaxElem, sd.bfCount, sd.ddBlockSize))
+		sb.WriteString(fmt.Sprintf("%d:%d:%d", sd.MaxElem, sd.bfCount, sd.ddBlockSize))
 		for i := uint32(0); i < sd.bfCount; i++ {
 			sb.WriteString(fmt.Sprintf(":%02x:", sd.elemCounts[i]))
 			sb.WriteString(base64.StdEncoding.EncodeToString(sd.Buffer[i*sd.bfSize:i*sd.bfSize + sd.bfSize]))
