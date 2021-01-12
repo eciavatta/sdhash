@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/pierrec/lz4"
-	"io"
 	"io/ioutil"
 	"math"
 	bits2 "math/bits"
@@ -16,7 +15,6 @@ import (
 	"strings"
 )
 
-var bits = []uint8{0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80}
 var bitMasks32 = []uint32{
 	0x01, 0x03, 0x07, 0x0F, 0x1F, 0x3F, 0x7F, 0xFF,
 	0x01FF, 0x03FF, 0x07FF, 0x0FFF, 0x1FFF, 0x3FFF, 0x7FFF, 0xFFFF,
@@ -73,6 +71,14 @@ func NewBloomFilter(size uint64, hashCount uint16, maxElem uint64, maxFP float64
 	return bf, nil
 }
 
+func NewSimpleBloomFilter() *bloomFilter {
+	if bf, err := NewBloomFilter(64*MB, 5, 0, 0.01); err != nil {
+		panic(err)
+	} else {
+		return bf
+	}
+}
+
 func NewBloomFilterFromIndexFile(indexFileName string) (*bloomFilter, error) {
 	buffer, err := ioutil.ReadFile(indexFileName)
 	if err != nil {
@@ -83,61 +89,58 @@ func NewBloomFilterFromIndexFile(indexFileName string) (*bloomFilter, error) {
 
 	r := bufio.NewReader(bytes.NewReader(buffer))
 	var bfSize uint64
-	if _, err := r.ReadBytes(byte(':')); err != nil { // discard headerbit
+	if _, err := r.ReadBytes(':'); err != nil { // discard headerbit
 		return nil, errors.New("failed to read headerbit")
 	}
-	if bfSizeStr, err := r.ReadString(byte(':')); err != nil {
+	if bfSizeStr, err := r.ReadString(':'); err != nil {
 		return nil, errors.New("failed to read bfSize")
 	} else {
-		if bfSize, err = strconv.ParseUint(bfSizeStr, 10, 64); err != nil {
+		if bfSize, err = strconv.ParseUint(bfSizeStr[:len(bfSizeStr)-1], 10, 64); err != nil {
 			return nil, errors.New("failed to parse bfSize")
 		}
 	}
-	if bfElemCountStr, err := r.ReadString(byte(':')); err != nil {
+	if bfElemCountStr, err := r.ReadString(':'); err != nil {
 		return nil, errors.New("failed to read bfElemCount")
 	} else {
-		if bfElemCount, err := strconv.ParseUint(bfElemCountStr, 10, 64); err != nil {
+		if bfElemCount, err := strconv.ParseUint(bfElemCountStr[:len(bfElemCountStr)-1], 10, 64); err != nil {
 			return nil, errors.New("failed to parse bfElemCount")
 		} else {
 			bf.bfElemCount = bfElemCount
 		}
 	}
-	if hashCountStr, err := r.ReadString(byte(':')); err != nil {
+	if hashCountStr, err := r.ReadString(':'); err != nil {
 		return nil, errors.New("failed to read hashCount")
 	} else {
-		if hashCount, err := strconv.ParseUint(hashCountStr, 10, 16); err != nil {
+		if hashCount, err := strconv.ParseUint(hashCountStr[:len(hashCountStr)-1], 10, 16); err != nil {
 			return nil, errors.New("failed to parse hashCount")
 		} else {
 			bf.HashCount = uint16(hashCount)
 		}
 	}
-	if bitMaskStr, err := r.ReadString(byte(':')); err != nil {
+	if bitMaskStr, err := r.ReadString(':'); err != nil {
 		return nil, errors.New("failed to read bitMask")
 	} else {
-		if bitMask, err := strconv.ParseUint(bitMaskStr, 10, 64); err != nil {
+		if bitMask, err := strconv.ParseUint(bitMaskStr[:len(bitMaskStr)-1], 10, 64); err != nil {
 			return nil, errors.New("failed to parse bitMask")
 		} else {
 			bf.BitMask = bitMask
 		}
 	}
-	if compSizeStr, err := r.ReadString(byte(':')); err != nil {
+	if compSizeStr, err := r.ReadString(':'); err != nil {
 		return nil, errors.New("failed to read compSize")
 	} else {
-		if compSize, err := strconv.ParseUint(compSizeStr, 10, 64); err != nil {
+		if compSize, err := strconv.ParseUint(compSizeStr[:len(compSizeStr)-1], 10, 64); err != nil {
 			return nil, errors.New("failed to parse compSize")
 		} else {
 			bf.compSize = compSize
 		}
 	}
-	if bf.setname, err = r.ReadString(byte('\n')); err != nil {
+	if bf.setname, err = r.ReadString('\n'); err != nil {
 		return nil, errors.New("failed to read setname")
 	}
+	bf.setname = bf.setname[:len(bf.setname)-1] // remove ending newline
 
-	bfComp := make([]byte, 0, bf.compSize)
-	if n, err := r.Read(bfComp); (err != nil && err != io.EOF) || uint64(n) != bf.compSize {
-		return nil, errors.New("failed to read bf compressed data")
-	}
-
+	bfComp := buffer[uint64(len(buffer))-bf.compSize:]
 	bf.BF = make([]uint8, bfSize)
 	if n, err := lz4.UncompressBlock(bfComp, bf.BF); err != nil || uint64(n) != bfSize {
 		return nil, err
@@ -183,19 +186,22 @@ func (bf *bloomFilter) WriteOut(filename string) error {
 		return err
 	}
 
+	buf := make([]uint8, 160*MB)
+	if n, err := lz4.CompressBlock(bf.BF, buf, nil); err != nil {
+		return err
+	} else {
+		bf.compSize = uint64(n)
+	}
+
 	if _, err := f.WriteString(fmt.Sprintf("sdbf-idx:%v:%v:%v:%v:%v:%s\n", len(bf.BF), bf.bfElemCount,
 		bf.HashCount, bf.BitMask, bf.compSize, bf.setname)); err != nil {
 		return err
 	}
 
-	zw := lz4.NewWriter(f)
-	if n, err := io.Copy(zw, bytes.NewReader(bf.BF)); err != nil {
+	if n, err := f.Write(buf[:bf.compSize]); err != nil {
 		return err
-	} else if uint64(n) != bf.compSize { // TODO: check
-		return errors.New(fmt.Sprintf("compression error: expected: %v, actual: %v", bf.compSize, n))
-	}
-	if err := zw.Close(); err != nil {
-		return err
+	} else if uint64(n) != bf.compSize {
+		return errors.New("failed to compress bloom filter")
 	}
 	if err := f.Close(); err != nil {
 		return err

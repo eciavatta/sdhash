@@ -43,7 +43,7 @@ type sdbf struct {
   \internal
   Initialize static configuration object with sensible defaults.
 */
-var config = NewSdbfConf(1, FlagOff, MaxElemCount, MaxElemCountDD)
+var config = NewSdbfConf(FlagOff, MaxElemCount, MaxElemCountDD)
 
 /**
   Create new sdbf from file.  dd_block_size turns on "block" mode.
@@ -52,13 +52,14 @@ var config = NewSdbfConf(1, FlagOff, MaxElemCount, MaxElemCountDD)
 
   \throws exception if file cannot be opened or too small
 */
-func NewSdbf(filename string, ddBlockSize uint32) (*sdbf, error) {
+func NewSdbfWithIndex(filename string, ddBlockSize uint32, info *indexInfo) (*sdbf, error) {
 	buffer, err := processFile(filename, MinFileSize)
 	if err != nil {
 		return nil, err
 	}
 
 	sd := createSdbf(filename)
+	sd.info = info
 	fileSize := uint64(len(buffer))
 	sd.origFileSize = fileSize
 	if ddBlockSize == 0 { // stream mode
@@ -81,7 +82,9 @@ func NewSdbf(filename string, ddBlockSize uint32) (*sdbf, error) {
 	return sd, nil
 }
 
-
+func NewSdbf(filename string, ddBlockSize uint32) (*sdbf, error) {
+	return NewSdbfWithIndex(filename, ddBlockSize, nil)
+}
 
 /**
   Returns the name of the file or data this sdbf represents.
@@ -211,11 +214,11 @@ func (sd *sdbf) Fast() {
 
 func createSdbf(name string) *sdbf {
 	sd := &sdbf{
-		hashName: name,
-		bfSize: config.BfSize,
-		hashCount: 5,
-		mask: BFClassMask[0],
-		bfCount: 1,
+		hashName:   name,
+		bfSize:     config.BfSize,
+		hashCount:  5,
+		mask:       bfClassMask[0],
+		bfCount:    1,
 		BigFilters: make([]*bloomFilter, 0),
 	}
 	// trying for m/n = 8
@@ -227,28 +230,3 @@ func createSdbf(name string) *sdbf {
 
 	return sd
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

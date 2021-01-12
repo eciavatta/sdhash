@@ -18,7 +18,6 @@ type sdbfConf struct {
 }
 
 const (
-	MaxThreadsCount = 512
 	KB              = 1024
 	MB              = KB * KB
 	BfSize          = 256
@@ -41,7 +40,7 @@ const (
 	fpThreshold = 4
 )
 
-var Entr64Ranks = []uint32{
+var entr64Ranks = []uint32{
 	000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000,
 	000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000,
 	000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000,
@@ -95,7 +94,7 @@ var Entr64Ranks = []uint32{
 	000,
 }
 
-var Cutoffs256 = []uint32{
+var cutoffs256 = []uint32{
 	1250, 1250, 1250, 1250, 1006, 806, 650, 534, 442, 374, 319, 273, 240, 210, 184, 166,
 	148, 132, 121, 110, 100, 93, 85, 78, 72, 67, 63, 59, 55, 52, 48, 45,
 	43, 40, 38, 37, 35, 32, 31, 30, 28, 27, 26, 25, 24, 23, 22, 21, 20,
@@ -106,7 +105,7 @@ var Cutoffs256 = []uint32{
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2,
 }
 
-var Cutoffs64 = []uint32{
+var cutoffs64 = []uint32{
 	354, 354, 354, 354, 277, 220, 178, 147, 123, 105, 90, 80, 70, 61, 57, 50,
 	46, 42, 37, 35, 33, 29, 27, 26, 24, 23, 22, 21, 19, 19, 18, 17,
 	16, 15, 14, 14, 14, 14, 13, 13, 11, 11, 11, 11, 10, 10, 10, 10, 9,
@@ -117,15 +116,13 @@ var Cutoffs64 = []uint32{
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2,
 }
 
-var BFClassMask = []uint32{0x7FF, 0x7FFF, 0x7FFFF, 0x7FFFFF, 0x7FFFFFF, 0xFFFFFFFF}
+var bfClassMask = []uint32{0x7FF, 0x7FFF, 0x7FFFF, 0x7FFFFF, 0x7FFFFFF, 0xFFFFFFFF}
 
-var Bits = []uint8{0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80}
+var bits = []uint8{0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80}
 
 var bitCount16 = [64 * KB]uint8{}
-//var bfEstCache = [256][256]uint16{}
-//var entropy64Int = [65]uint64{}
 
-func NewSdbfConf(threadCount uint32, warnings uint32, maxElemCt uint32, maxElemCtDD uint32) *sdbfConf {
+func NewSdbfConf(warnings uint32, maxElemCt uint32, maxElemCtDD uint32) *sdbfConf {
 	sc := &sdbfConf{
 		EntrWinSize: 64,
 		BfSize:      256,
@@ -135,12 +132,6 @@ func NewSdbfConf(threadCount uint32, warnings uint32, maxElemCt uint32, maxElemC
 		MaxElemDd:   maxElemCtDD,
 		Warnings:    warnings,
 		Threshold:   16,
-	}
-
-	if threadCount <= MaxThreadsCount {
-		sc.ThreadCnt = threadCount
-	} else {
-		sc.ThreadCnt = MaxThreadsCount
 	}
 
 	sc.initBitCount16()

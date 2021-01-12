@@ -26,7 +26,7 @@ func (sd *sdbf) genChunkRanks(fileBuffer []uint8, chunkSize uint64, chunkRanks [
 			} else { // Incremental entropy update (much faster)
 				entropy = config.entr64IncInt(entropy, fileBuffer[offset-1:], ascii)
 			}
-			chunkRanks[offset] = uint16(Entr64Ranks[entropy>>EntrPower])
+			chunkRanks[offset] = uint16(entr64Ranks[entropy>>EntrPower])
 		}
 	}
 }
@@ -91,11 +91,9 @@ func (sd *sdbf) genChunkHash(fileBuffer []uint8, chunkPos uint64, chunkScores []
 				if bitsSet == 0 {
 					continue
 				}
-				if sd.info != nil {
-					if sd.info.index != nil {
-						if !sd.info.index.InsertSha1(sha1Hash[:]) {
-							continue
-						}
+				if sd.info != nil && sd.info.index != nil {
+					if !sd.info.index.InsertSha1(sha1Hash[:]) {
+						continue
 					}
 				}
 
@@ -385,10 +383,10 @@ func (sd *sdbf) sdbfMaxScore(refSdbf *sdbf, refIndex uint32, targetSdbf *sdbf) f
 		var cutOff uint32
 		if !refSdbf.fastMode {
 			mn := 4096 / (s1 + s2)
-			cutOff = Cutoffs256[mn]
+			cutOff = cutoffs256[mn]
 		} else {
 			mn := 1024 / (s1 + s2)
-			cutOff = Cutoffs64[mn]
+			cutOff = cutoffs64[mn]
 		}
 		// Find matching bits
 		match := bfBitCountCut256(bf1, bf2, 0, 0)
