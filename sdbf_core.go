@@ -69,7 +69,7 @@ func (sd *Sdbf) genChunkScores(chunkRanks []uint16, chunkSize uint64, chunkScore
 func (sd *Sdbf) genChunkHash(fileBuffer []uint8, chunkPos uint64, chunkScores []uint16, chunkSize uint64) {
 	bfCount := sd.bfCount
 	lastCount := sd.lastCount
-	currBf := sd.Buffer[(bfCount-1)*sd.bfSize:]
+	currBf := sd.buffer[(bfCount-1)*sd.bfSize:]
 	var bigfiCount uint64
 
 	if chunkSize > uint64(PopWinSize) {
@@ -88,24 +88,24 @@ func (sd *Sdbf) genChunkHash(fileBuffer []uint8, chunkPos uint64, chunkScores []
 				}
 
 				// new style big filters...
-				inserted := sd.BigFilters[len(sd.BigFilters)-1].InsertSha1(sha1Hash[:])
+				inserted := sd.bigFilters[len(sd.bigFilters)-1].InsertSha1(sha1Hash[:])
 				if !inserted {
 					continue
 				}
 
 				lastCount++
 				bigfiCount++
-				if lastCount == sd.MaxElem {
+				if lastCount == sd.maxElem {
 					currBf = currBf[sd.bfSize:]
 					bfCount++
 					lastCount = 0
 				}
-				if bigfiCount == sd.BigFilters[len(sd.BigFilters)-1].MaxElem {
+				if bigfiCount == sd.bigFilters[len(sd.bigFilters)-1].MaxElem {
 					bf, err := NewBloomFilter(bigFilter, 5, bigFilterElem, 0.01)
 					if err != nil {
 						panic(err)
 					}
-					sd.BigFilters = append(sd.BigFilters, bf)
+					sd.bigFilters = append(sd.bigFilters, bf)
 					bigfiCount = 0
 				}
 			}
@@ -128,15 +128,15 @@ func (sd *Sdbf) genBlockHash(fileBuffer []uint8, blockNum uint64, chunkScores []
 	} else {
 		maxOffset = uint32(blockSize)
 	}
-	if sd.indexMatches != nil {
-		numIndexMatches = uint32(len(sd.indexMatches))
+	if sd.searchIndexes != nil {
+		numIndexMatches = uint32(len(sd.searchIndexes))
 	}
 	match := make([]uint32, numIndexMatches)
 	for i := uint32(0); i < maxOffset-PopWinSize && hashCnt < MaxElemDd; i++ {
 		if uint32(chunkScores[i]) > threshold || (uint32(chunkScores[i]) == threshold && allowed > 0) {
 			data := fileBuffer[blockNum*blockSize:] // Start of data
 			sha1Hash := u32sha1(data[i:i+PopWinSize])
-			bf := sd.Buffer[blockNum*uint64(sd.bfSize):] // BF to be filled
+			bf := sd.buffer[blockNum*uint64(sd.bfSize):] // BF to be filled
 			bitsSet := bfSha1Insert(bf, sha1Hash)
 			if bitsSet == 0 { // Avoid potentially repetitive features
 				continue
@@ -145,7 +145,7 @@ func (sd *Sdbf) genBlockHash(fileBuffer []uint8, blockNum uint64, chunkScores []
 				sd.index.InsertSha1(sha1Hash[:])
 			}
 
-			if sd.indexMatches != nil {
+			if sd.searchIndexes != nil {
 				if hashCnt % 4 == 0 { // why??
 					sd.checkIndexes(sha1Hash[:], match)
 				}
@@ -157,8 +157,8 @@ func (sd *Sdbf) genBlockHash(fileBuffer []uint8, blockNum uint64, chunkScores []
 		}
 	}
 
-	if sd.indexMatchesResults != nil {
-		sd.indexMatchesResults[blockNum] = match
+	if sd.searchIndexesResults != nil {
+		sd.searchIndexesResults[blockNum] = match
 	}
 
 	sd.elemCounts[blockNum] = uint16(hashCnt)
@@ -167,13 +167,14 @@ func (sd *Sdbf) genBlockHash(fileBuffer []uint8, blockNum uint64, chunkScores []
 /**
  * Generate SDBF hash for a buffer--stream version.
  */
-func (sd *Sdbf) genChunkSdbf(fileBuffer []uint8, fileSize uint64, chunkSize uint64) {
+func (sd *Sdbf) genChunkSdbf(fileBuffer []uint8, chunkSize uint64) {
 	if chunkSize <= uint64(PopWinSize) {
 		panic("chunkSize <= popWinSize")
 	}
 
+	fileSize := uint64(len(fileBuffer))
 	buffSize := ((fileSize >> 11) + 1) << 8 // Estimate Sdbf size (reallocate later)
-	sd.Buffer = make([]uint8, buffSize)
+	sd.buffer = make([]uint8, buffSize)
 
 	// Chunk-based computation
 	qt := fileSize / chunkSize
@@ -191,7 +192,7 @@ func (sd *Sdbf) genChunkSdbf(fileBuffer []uint8, fileSize uint64, chunkSize uint
 		// Calculate thresholding parameters
 		var sum uint32
 		for k := uint32(65); k >= Threshold; k-- {
-			if (sum <= sd.MaxElem) && (sum+uint32(scoreHisto[k]) > sd.MaxElem) {
+			if (sum <= sd.maxElem) && (sum+uint32(scoreHisto[k]) > sd.maxElem) {
 				break
 			}
 			sum += uint32(scoreHisto[k])
@@ -206,14 +207,14 @@ func (sd *Sdbf) genChunkSdbf(fileBuffer []uint8, fileSize uint64, chunkSize uint
 	}
 
 	// Chop off last BF if its membership is too low (eliminates some FPs)
-	if sd.bfCount > 1 && sd.lastCount < sd.MaxElem/8 {
+	if sd.bfCount > 1 && sd.lastCount < sd.maxElem/8 {
 		sd.bfCount--
-		sd.lastCount = sd.MaxElem
+		sd.lastCount = sd.maxElem
 	}
 
 	// Trim BF allocation to size
 	if uint64(sd.bfCount) * uint64(sd.bfSize) < buffSize {
-		sd.Buffer = sd.Buffer[:sd.bfCount*sd.bfSize]
+		sd.buffer = sd.buffer[:sd.bfCount*sd.bfSize]
 	}
 }
 
@@ -244,16 +245,16 @@ func (sd *Sdbf) threadGenBlockSdbf(index uint64, blockSize uint64, buffer []uint
 /**
   dd-mode hash generation.
 */
-func (sd *Sdbf) genBlockSdbfMt(fileBuffer []uint8, fileSize uint64, blockSize uint64) {
-	qt := fileSize / blockSize
-	rem := fileSize % blockSize
+func (sd *Sdbf) genBlockSdbfMt(fileBuffer []uint8, blockSize uint64) {
+	qt := uint64(len(fileBuffer)) / blockSize
+	rem :=  uint64(len(fileBuffer)) % blockSize
 
-	if sd.indexMatches != nil {
+	if sd.searchIndexes != nil {
 		blockCount := qt
 		if rem >= minFileSize {
 			blockCount++
 		}
-		sd.indexMatchesResults = make([][]uint32, blockCount)
+		sd.searchIndexesResults = make([][]uint32, blockCount)
 	}
 
 	ch := make(chan bool, qt)
@@ -270,7 +271,7 @@ func (sd *Sdbf) genBlockSdbfMt(fileBuffer []uint8, fileSize uint64, blockSize ui
 
 		sd.genChunkRanks(fileBuffer[blockSize*qt:blockSize*qt + rem], chunkRanks)
 		sd.genChunkScores(chunkRanks, rem, chunkScores, nil)
-		sd.genBlockHash(fileBuffer, qt, chunkScores, blockSize, uint32(rem), Threshold, int32(sd.MaxElem))
+		sd.genBlockHash(fileBuffer, qt, chunkScores, blockSize, uint32(rem), Threshold, int32(sd.maxElem))
 	}
 }
 
@@ -346,10 +347,10 @@ func (sd *Sdbf) sdbfMaxScore(refSdbf *Sdbf, refIndex uint32, targetSdbf *Sdbf) f
 	if s1 < minElemCount {
 		return 0
 	}
-	bf1 := refSdbf.Buffer[refIndex*bfSize:]
+	bf1 := refSdbf.buffer[refIndex*bfSize:]
 	e1Cnt := refSdbf.Hamming[refIndex]
 	for i := uint32(0); i < targetSdbf.bfCount; i++ {
-		bf2 := targetSdbf.Buffer[i*bfSize:]
+		bf2 := targetSdbf.buffer[i*bfSize:]
 		s2 := targetSdbf.GetElemCount(uint64(i))
 		if refSdbf.bfCount >= 1 && s2 < minElemCount {
 			continue
@@ -388,8 +389,8 @@ func (sd *Sdbf) sdbfMaxScore(refSdbf *Sdbf, refIndex uint32, targetSdbf *Sdbf) f
 func (sd *Sdbf) checkIndexes(sha1 []uint32, matches []uint32) bool {
 	any := false
 
-	for i := 0; i < len(sd.indexMatches); i++ {
-		if sd.indexMatches[i].QuerySha1(sha1) {
+	for i := 0; i < len(sd.searchIndexes); i++ {
+		if sd.searchIndexes[i].QuerySha1(sha1) {
 			matches[i]++
 			any = true
 		}

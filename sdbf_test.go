@@ -25,12 +25,12 @@ var testCases = []testCase{
 	{
 		name: "zero-length",
 		length: 0,
-		expectedErr: "%s is too small",
+		expectedErr: "the length of buffer must be greater than 512",
 	},
 	{
 		name: "small",
 		length: 256,
-		expectedErr: "%s is too small",
+		expectedErr: "the length of buffer must be greater than 512",
 	},
 	{
 		name: "min-size-limit",
@@ -67,14 +67,15 @@ func CreateSdbfTest(testName string, blockSize uint32, tmpDir string) func(t *te
 	return func(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t1 *testing.T) {
-				sd, err := NewSdbf(tc.fileName, blockSize*kB)
+				factory, err := CreateSdbfFromBytes(tc.buffer)
+				var sd *Sdbf
 				if tc.expectedErr != "" && err != nil {
-					expected := fmt.Sprintf(tc.expectedErr, tc.fileName)
-					assert.EqualError(t1, err, expected, tc.fileName)
+					assert.EqualError(t1, err, tc.expectedErr, tc.fileName)
 				} else if err == nil {
 					sdDigest, err := ioutil.ReadFile(fmt.Sprintf("test_data/%s/%s.sdbf", testName, tc.name))
 					require.NoError(t1, err)
 
+					sd = factory.WithBlockSize(blockSize*kB).WithName(tc.fileName).Get()
 					expected := fmt.Sprintf(string(sdDigest), len(tc.fileName), tc.fileName)
 					assert.Equal(t1, expected, sd.String())
 					assert.Equal(t1, tc.compareSelfScore, sd.Compare(sd, 0))
