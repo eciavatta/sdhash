@@ -37,28 +37,28 @@ var testCases = []testCase{
 		length: 512,
 	},
 	{
-		name: "block-sized",
-		length: KB,
+		name:             "block-sized",
+		length:           kB,
 		compareSelfScore: 100,
 	},
 	{
-		name: "rem-block",
-		length: KB * 16 + 31,
+		name:             "rem-block",
+		length:           kB* 16 + 31,
 		compareSelfScore: 100,
 	},
 	{
-		name: "medium",
-		length: MB,
+		name:             "medium",
+		length:           mB,
 		compareSelfScore: 100,
 	},
 	{
-		name: "large",
-		length: MB,
+		name:             "large",
+		length:           mB,
 		compareSelfScore: 100,
 	},
 	//{
 	//	name: "very-large",
-	//	length: 32*MB,
+	//	length: 32*mB,
 	//	compareSelfScore: 100,
 	//},
 }
@@ -67,12 +67,7 @@ func CreateSdbfTest(testName string, blockSize uint32, tmpDir string) func(t *te
 	return func(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t1 *testing.T) {
-				bf := NewSimpleBloomFilter()
-				info := &indexInfo{
-					index: bf,
-				}
-
-				sd, err := NewSdbfWithIndex(tc.fileName, blockSize*KB, info)
+				sd, err := NewSdbf(tc.fileName, blockSize*kB)
 				if tc.expectedErr != "" && err != nil {
 					expected := fmt.Sprintf(tc.expectedErr, tc.fileName)
 					assert.EqualError(t1, err, expected, tc.fileName)
@@ -87,18 +82,20 @@ func CreateSdbfTest(testName string, blockSize uint32, tmpDir string) func(t *te
 					require.Fail(t1, "invalid")
 				}
 
-				set1 := NewSdbfSetFromIndex(info.index)
-				tmpFile := path.Join(tmpDir, fmt.Sprintf("%s-%s.idx", testName, tc.name))
-				require.NoError(t, set1.Index.WriteOut(tmpFile))
+				if sd != nil {
+					bf := sd.GetIndex()
+					tmpFile := path.Join(tmpDir, fmt.Sprintf("%s-%s.idx", testName, tc.name))
+					require.NoError(t, bf.WriteOut(tmpFile))
 
-				bfCheck, err := NewBloomFilterFromIndexFile(tmpFile)
-				require.NoError(t, err)
+					bfCheck, err := NewBloomFilterFromIndexFile(tmpFile)
+					require.NoError(t, err)
 
-				assert.Equal(t, sha1.Sum(bf.BF), sha1.Sum(bfCheck.BF))
-				assert.Equal(t1, bf.HashCount, bfCheck.HashCount)
-				assert.Equal(t1, bf.BitMask, bfCheck.BitMask)
-				assert.Equal(t1, bf.compSize, bfCheck.compSize)
-				assert.Equal(t1, bf.setname, bfCheck.setname)
+					assert.Equal(t, sha1.Sum(bf.BF), sha1.Sum(bfCheck.BF))
+					assert.Equal(t1, bf.HashCount, bfCheck.HashCount)
+					assert.Equal(t1, bf.BitMask, bfCheck.BitMask)
+					assert.Equal(t1, bf.compSize, bfCheck.compSize)
+					assert.Equal(t1, bf.setname, bfCheck.setname)
+				}
 			})
 		}
 	}
@@ -123,9 +120,9 @@ func TestGenericSdbf(t *testing.T) {
 		testCases[i].buffer = buf
 	}
 
-	t.Run("sdbf-stream", CreateSdbfTest("stream", 0, tmpDir))
-	t.Run("sdbf-block1KB", CreateSdbfTest("block1kb", 1, tmpDir))
-	t.Run("sdbf-block16KB", CreateSdbfTest("block16kb", 16, tmpDir))
+	t.Run("Sdbf-stream", CreateSdbfTest("stream", 0, tmpDir))
+	t.Run("Sdbf-block1KB", CreateSdbfTest("block1kb", 1, tmpDir))
+	t.Run("Sdbf-block16KB", CreateSdbfTest("block16kb", 16, tmpDir))
 
 	require.NoError(t, os.RemoveAll(tmpDir))
 }

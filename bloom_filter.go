@@ -33,7 +33,7 @@ var cutoffs = []uint32{
 	246, 242, 238, 235, 231, 228, 225, 221, 218,
 }
 
-type bloomFilter struct {
+type BloomFilter struct {
 	BF          []uint8 // Beginning of the BF
 	Hamming     uint16  // weight of this bf
 	Hamminglg   uint32  // weight of this bf
@@ -48,8 +48,8 @@ type bloomFilter struct {
 	blId        int
 }
 
-func NewBloomFilter(size uint64, hashCount uint16, maxElem uint64, maxFP float64) (*bloomFilter, error) {
-	bf := &bloomFilter{
+func NewBloomFilter(size uint64, hashCount uint16, maxElem uint64, maxFP float64) (*BloomFilter, error) {
+	bf := &BloomFilter{
 		HashCount: hashCount,
 		MaxElem:   maxElem,
 		maxFp:     maxFP,
@@ -71,21 +71,21 @@ func NewBloomFilter(size uint64, hashCount uint16, maxElem uint64, maxFP float64
 	return bf, nil
 }
 
-func NewSimpleBloomFilter() *bloomFilter {
-	if bf, err := NewBloomFilter(64*MB, 5, 0, 0.01); err != nil {
+func NewSimpleBloomFilter() *BloomFilter {
+	if bf, err := NewBloomFilter(64*mB, 5, 0, 0.01); err != nil {
 		panic(err)
 	} else {
 		return bf
 	}
 }
 
-func NewBloomFilterFromIndexFile(indexFileName string) (*bloomFilter, error) {
+func NewBloomFilterFromIndexFile(indexFileName string) (*BloomFilter, error) {
 	buffer, err := ioutil.ReadFile(indexFileName)
 	if err != nil {
 		return nil, err
 	}
 
-	bf := &bloomFilter{}
+	bf := &BloomFilter{}
 
 	r := bufio.NewReader(bytes.NewReader(buffer))
 	var bfSize uint64
@@ -149,11 +149,11 @@ func NewBloomFilterFromIndexFile(indexFileName string) (*bloomFilter, error) {
 	return bf, err
 }
 
-func NewBloomFilterFromExistingData(data []uint8, id int, bfElemCount int, hamming uint16) *bloomFilter {
+func NewBloomFilterFromExistingData(data []uint8, id int, bfElemCount int, hamming uint16) *BloomFilter {
 	var logSize uint16
 	for tmp := len(data); tmp > 0; tmp, logSize = tmp>>1, logSize+1 {
 	}
-	bf := &bloomFilter{
+	bf := &BloomFilter{
 		BitMask:     uint64(bitMasks32[logSize+1]),
 		HashCount:   5,
 		bfElemCount: uint64(bfElemCount),
@@ -168,32 +168,32 @@ func NewBloomFilterFromExistingData(data []uint8, id int, bfElemCount int, hammi
 	return bf
 }
 
-func (bf *bloomFilter) ElemCount() uint64 {
+func (bf *BloomFilter) ElemCount() uint64 {
 	return bf.bfElemCount
 }
 
-func (bf *bloomFilter) EstFpRate() float64 {
+func (bf *BloomFilter) EstFpRate() float64 {
 	return -1.0
 }
 
-func (bf *bloomFilter) BitsPerElem() float64 {
+func (bf *BloomFilter) BitsPerElem() float64 {
 	return float64(len(bf.BF)<<3) / float64(bf.bfElemCount)
 }
 
-func (bf *bloomFilter) WriteOut(filename string) error {
+func (bf *BloomFilter) WriteOut(filename string) error {
 	f, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
 
-	buf := make([]uint8, 160*MB)
+	buf := make([]uint8, 160*mB)
 	if n, err := lz4.CompressBlock(bf.BF, buf, nil); err != nil {
 		return err
 	} else {
 		bf.compSize = uint64(n)
 	}
 
-	if _, err := f.WriteString(fmt.Sprintf("sdbf-idx:%v:%v:%v:%v:%v:%s\n", len(bf.BF), bf.bfElemCount,
+	if _, err := f.WriteString(fmt.Sprintf("Sdbf-idx:%v:%v:%v:%v:%v:%s\n", len(bf.BF), bf.bfElemCount,
 		bf.HashCount, bf.BitMask, bf.compSize, bf.setname)); err != nil {
 		return err
 	}
@@ -210,23 +210,23 @@ func (bf *bloomFilter) WriteOut(filename string) error {
 	return nil
 }
 
-func (bf *bloomFilter) Name() string {
+func (bf *BloomFilter) Name() string {
 	return bf.setname
 }
 
-func (bf *bloomFilter) SetName(name string) {
+func (bf *BloomFilter) SetName(name string) {
 	bf.setname = name
 }
 
-func (bf *bloomFilter) BloomId() int {
+func (bf *BloomFilter) BloomId() int {
 	return bf.blId
 }
 
-func (bf *bloomFilter) SetBloomId(id int) {
+func (bf *BloomFilter) SetBloomId(id int) {
 	bf.blId = id
 }
 
-func (bf *bloomFilter) Fold(times uint32) {
+func (bf *BloomFilter) Fold(times uint32) {
 	bfSize := len(bf.BF)
 	for i := uint32(0); i < times; i++ {
 		for j := 0; j < bfSize/2; j++ {
@@ -245,7 +245,7 @@ func (bf *bloomFilter) Fold(times uint32) {
 	bf.BF = bf.BF[:bfSize]
 }
 
-func (bf *bloomFilter) Add(other *bloomFilter) error {
+func (bf *BloomFilter) Add(other *BloomFilter) error {
 	if len(bf.BF) != len(other.BF) {
 		return errors.New("bloom filters must have the same size")
 	}
@@ -257,15 +257,15 @@ func (bf *bloomFilter) Add(other *bloomFilter) error {
 	return nil
 }
 
-func (bf *bloomFilter) InsertSha1(sha1 []uint32) bool {
+func (bf *BloomFilter) InsertSha1(sha1 []uint32) bool {
 	return bf.queryAndSet(sha1, true)
 }
 
-func (bf *bloomFilter) QuerySha1(sha1 []uint32) bool {
+func (bf *BloomFilter) QuerySha1(sha1 []uint32) bool {
 	return bf.queryAndSet(sha1, false)
 }
 
-func (bf *bloomFilter) Compare(other *bloomFilter, scale float64) int {
+func (bf *BloomFilter) Compare(other *BloomFilter, scale float64) int {
 	if len(bf.BF) != len(other.BF) {
 		return -1
 	}
@@ -301,11 +301,11 @@ func (bf *bloomFilter) Compare(other *bloomFilter, scale float64) int {
 	}
 }
 
-func (bf *bloomFilter) ToString() string {
+func (bf *BloomFilter) ToString() string {
 	return base64.StdEncoding.EncodeToString(bf.BF)
 }
 
-func (bf *bloomFilter) ComputeHamming() {
+func (bf *BloomFilter) ComputeHamming() {
 	bf.Hamming = 0
 	bf.Hamminglg = 0
 	for j := 0; j < len(bf.BF); j++ {
@@ -313,8 +313,8 @@ func (bf *bloomFilter) ComputeHamming() {
 	}
 }
 
-func NewBloomFilterFromString(filter string, folds int) (*bloomFilter, error) {
-	bf := &bloomFilter{
+func NewBloomFilterFromString(filter string, folds int) (*BloomFilter, error) {
+	bf := &BloomFilter{
 		created: true,
 	}
 
@@ -387,7 +387,7 @@ func NewBloomFilterFromString(filter string, folds int) (*bloomFilter, error) {
 	return bf, err
 }
 
-func (bf *bloomFilter) queryAndSet(sha1 []uint32, modeSet bool) bool {
+func (bf *BloomFilter) queryAndSet(sha1 []uint32, modeSet bool) bool {
 	var pos, k uint32
 	var bitCount uint16
 	for i := uint16(0); i < bf.HashCount; i++ {

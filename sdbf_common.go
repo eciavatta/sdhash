@@ -2,42 +2,36 @@ package sdhash
 
 import "math"
 
-type sdbfConf struct {
-	ThreadCnt   uint32 // number of pthreads available
-	EntrWinSize uint32
-	BfSize      uint32
-	PopWinSize  uint32
-	BlockSize   uint32
-	MaxElem     uint32 // maximum elements per bf
-	MaxElemDd   uint32 // maximum elements per bf - dd mode
-	Warnings    uint32 // whether to process warnings
-	Threshold   uint32
-	Popcnt      bool
-
-	Entropy64Int [65]uint64
-}
+const (
+	EntrWinSize = 64
+	BfSize      = 256
+	BlockSize   = 4 * kB
+	PopWinSize  = 64
+	MaxElem     = 160
+	MaxElemDd   = 192
+	Threshold   = 16
+)
 
 const (
-	KB              = 1024
-	MB              = KB * KB
-	BfSize          = 256
-	Bins            = 1000
-	EntrPower       = 10
-	EntrScale       = Bins * (1 << EntrPower)
-	MinElemCount    = 16
+	kB           = 1024
+	mB           = kB * kB
+	bins         = 1000
+	entrPower    = 10
+	entrScale    = bins * (1 << entrPower)
+	minElemCount = 16
 
-	MinFileSize    = 512
-	FlagOff        = 0
-	MaxElemCount   = 160
-	MaxElemCountDD = 192
-	BigFilter      = 16384
-	BigFilterElem  = 8738
+	minFileSize   = 512
+	bigFilter     = 16384
+	bigFilterElem = 8738
 
-	MagicStream    = "sdbf"
-	SdbfVersion    = 3
-	MagicDD        = "sdbf-dd"
+	magicStream = "sdbf"
+	sdbfVersion = 3
+	magicDD     = "sdbf-dd"
 
 	fpThreshold = 4
+
+	defaultMask = 0x7FF
+	defaultHashCount = 5
 )
 
 var entr64Ranks = []uint32{
@@ -116,42 +110,27 @@ var cutoffs64 = []uint32{
 	3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2,
 }
 
-var bfClassMask = []uint32{0x7FF, 0x7FFF, 0x7FFFF, 0x7FFFFF, 0x7FFFFFF, 0xFFFFFFFF}
-
 var bits = []uint8{0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80}
 
-var bitCount16 = [64 * KB]uint8{}
+var bitCount16 = [64 * kB]uint8{}
 
-func NewSdbfConf(warnings uint32, maxElemCt uint32, maxElemCtDD uint32) *sdbfConf {
-	sc := &sdbfConf{
-		EntrWinSize: 64,
-		BfSize:      256,
-		BlockSize:   4 * KB,
-		PopWinSize:  64,
-		MaxElem:     maxElemCt,
-		MaxElemDd:   maxElemCtDD,
-		Warnings:    warnings,
-		Threshold:   16,
-	}
+var entropy64Int [65]uint64
 
-	sc.initBitCount16()
-	sc.entr64TableInitInt()
-
-	// todo: check popcnt availability
-
-	return sc
-}
-
-func (sc *sdbfConf) initBitCount16() {
-	// todo: memset 0 bit_count_16
-	for b := 0; b < 64*KB; b++ {
+func init() {
+	// init bitCount16
+	for b := 0; b < 64*kB; b++ {
 		for bit := 0; bit < 16; bit++ {
 			if b&0x1<<bit != 0 {
 				bitCount16[b]++
 			}
 		}
 	}
-	// todo: memset 0 bf_est_cache
+
+	// init entropy64Int
+	for i := 1; i <= 64; i++ {
+		p := float64(i) / 64
+		entropy64Int[i] = uint64((-p * (math.Log(p) / math.Log(2)) / 6) * entrScale)
+	}
 }
 
 /*
@@ -159,19 +138,9 @@ func (sc *sdbfConf) initBitCount16() {
  */
 
 /**
-Entropy lookup table setup--int64 version (to be called once)
-*/
-func (sc *sdbfConf) entr64TableInitInt() {
-	for i := 1; i <= 64; i++ {
-		p := float64(i) / 64
-		sc.Entropy64Int[i] = uint64((-p * (math.Log(p) / math.Log(2)) / 6) * EntrScale)
-	}
-}
-
-/**
 Baseline entropy computation for a 64-byte buffer--int64 version (to be called periodically)
 */
-func (sc *sdbfConf) entr64InitInt(buffer []uint8, ascii []uint8) uint64 {
+func entr64InitInt(buffer []uint8, ascii []uint8) uint64 {
 	memsetU8(ascii, 0)
 	for i := 0; i < 64; i++ {
 		ascii[buffer[i]]++
@@ -179,7 +148,7 @@ func (sc *sdbfConf) entr64InitInt(buffer []uint8, ascii []uint8) uint64 {
 	var entr uint64
 	for i := 0; i < 256; i++ {
 		if ascii[i] > 0 {
-			entr += config.Entropy64Int[ascii[i]]
+			entr += entropy64Int[ascii[i]]
 		}
 	}
 	return entr
@@ -188,7 +157,7 @@ func (sc *sdbfConf) entr64InitInt(buffer []uint8, ascii []uint8) uint64 {
 /**
  * Incremental (rolling) update to entropy computation--int64 version
  */
-func (sc *sdbfConf) entr64IncInt(prevEntropy uint64, buffer []uint8, ascii []uint8) uint64 {
+func entr64IncInt(prevEntropy uint64, buffer []uint8, ascii []uint8) uint64 {
 	if buffer[0] == buffer[64] {
 		return prevEntropy
 	}
@@ -203,14 +172,14 @@ func (sc *sdbfConf) entr64IncInt(prevEntropy uint64, buffer []uint8, ascii []uin
 		return prevEntropy
 	}
 
-	oldDiff := int64(sc.Entropy64Int[oldCharCnt]) - int64(sc.Entropy64Int[oldCharCnt-1])
-	newDiff := int64(sc.Entropy64Int[newCharCnt+1]) - int64(sc.Entropy64Int[newCharCnt])
+	oldDiff := int64(entropy64Int[oldCharCnt]) - int64(entropy64Int[oldCharCnt-1])
+	newDiff := int64(entropy64Int[newCharCnt+1]) - int64(entropy64Int[newCharCnt])
 
 	entropy := int64(prevEntropy) - oldDiff + newDiff
 	if entropy < 0 {
 		entropy = 0
-	} else if entropy > EntrScale {
-		entropy = EntrScale
+	} else if entropy > entrScale {
+		entropy = entrScale
 	}
 
 	return uint64(entropy)

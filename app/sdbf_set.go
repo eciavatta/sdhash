@@ -1,17 +1,18 @@
-package sdhash
+package main
 
 import (
 	"bufio"
 	"fmt"
+	"github.com/eciavatta/sdhash"
 	"os"
 	"strings"
 	"sync"
 )
 
-type sdbfSet struct {
-	Index *bloomFilter
-	BfVector []*bloomFilter
-	items []*sdbf
+type SdbfSet struct {
+	Index *sdhash.BloomFilter
+	BfVector []*sdhash.BloomFilter
+	items []*sdhash.Sdbf
 	setname string
 	sep byte
 	addHashMutex sync.Mutex
@@ -20,10 +21,10 @@ type sdbfSet struct {
 /**
   Creates empty sdbf_set
 */
-func NewSdbfSet() *sdbfSet {
-	return &sdbfSet{
+func NewSdbfSet() *SdbfSet {
+	return &SdbfSet{
 		setname:  "default",
-		BfVector: make([]*bloomFilter, 0),
+		BfVector: make([]*sdhash.BloomFilter, 0),
 		sep:      '|',
 	}
 }
@@ -32,25 +33,25 @@ func NewSdbfSet() *sdbfSet {
   Creates empty sdbf_set with an index
   \param index to insert new items into
 */
-func NewSdbfSetFromIndex(index *bloomFilter) *sdbfSet {
-	return &sdbfSet{
+func NewSdbfSetFromIndex(index *sdhash.BloomFilter) *SdbfSet {
+	return &SdbfSet{
 		setname:  "default",
 		Index: index,
-		BfVector: make([]*bloomFilter, 0),
+		BfVector: make([]*sdhash.BloomFilter, 0),
 		sep:      '|',
 	}
 }
 
 /**
   Loads all sdbfs from a file into a new set
-  \param fname name of sdbf file
+  \param fname name of Sdbf file
 */
-func NewSdbfSetFromFileName(fname string) *sdbfSet {
-	ss := &sdbfSet{
+func NewSdbfSetFromFileName(fname string) *SdbfSet {
+	ss := &SdbfSet{
 		Index: nil, // right now we cannot read-in an index, but we can set one later
-		BfVector: make([]*bloomFilter, 0),
+		BfVector: make([]*sdhash.BloomFilter, 0),
 		sep:      '|',
-		items: make([]*sdbf, 0),
+		items: make([]*sdhash.Sdbf, 0),
 	}
 
 	if file, err := os.Open(fname); err == nil {
@@ -72,11 +73,11 @@ func NewSdbfSetFromFileName(fname string) *sdbfSet {
 }
 
 /**
-  Accessor method for a single sdbf* in this set
+  Accessor method for a single Sdbf* in this set
   \param pos position 0 to size()
-  \returns sdbf* or NULL if position not valid
+  \returns Sdbf* or NULL if position not valid
 */
-func (ss *sdbfSet) At(pos uint32) *sdbf {
+func (ss *SdbfSet) At(pos uint32) *sdhash.Sdbf {
 	if pos < uint32(len(ss.items)) {
 		return ss.items[pos]
 	} else {
@@ -86,9 +87,9 @@ func (ss *sdbfSet) At(pos uint32) *sdbf {
 
 /**
   Adds a single hash to this set
-  \param hash an existing sdbf hash
+  \param hash an existing Sdbf hash
 */
-func (ss *sdbfSet) AddHash(hash *sdbf) {
+func (ss *SdbfSet) AddHash(hash *sdhash.Sdbf) {
 	ss.addHashMutex.Lock()
 	ss.items = append(ss.items, hash)
 	ss.addHashMutex.Unlock()
@@ -98,7 +99,7 @@ func (ss *sdbfSet) AddHash(hash *sdbf) {
   Adds all items in another set to this set
   \param hashset sdbf_set* to be added
 */
-func (ss *sdbfSet) AddHashset(hashset *sdbfSet) {
+func (ss *SdbfSet) AddHashset(hashset *SdbfSet) {
 	// for all in hashset->items, add to this->items
 	for _, sd := range hashset.items {
 		ss.items = append(ss.items, sd)
@@ -107,10 +108,10 @@ func (ss *sdbfSet) AddHashset(hashset *sdbfSet) {
 
 /**
   Computes the data size of this set, from the
-  input_size() values of its' content sdbf hashes.
+  input_size() values of its' content Sdbf hashes.
   \returns uint64_t total of input sizes
 */
-func (ss *sdbfSet) InputSize() uint64 {
+func (ss *SdbfSet) InputSize() uint64 {
 	var size uint64
 	for _, sd := range ss.items {
 		size += sd.InputSize()
@@ -122,7 +123,7 @@ func (ss *sdbfSet) InputSize() uint64 {
   Number of items in this set
   \returns uint64_t number of items in this set
 */
-func (ss *sdbfSet) Size() uint64 {
+func (ss *SdbfSet) Size() uint64 {
 	return uint64(len(ss.items))
 }
 
@@ -130,7 +131,7 @@ func (ss *sdbfSet) Size() uint64 {
   Checks empty status of container
   \returns int 1 if empty, 0 if non-empty
 */
-func (ss *sdbfSet) Empty() int {
+func (ss *SdbfSet) Empty() int {
 	if len(ss.items) > 0 {
 		return 0
 	} else {
@@ -138,22 +139,12 @@ func (ss *sdbfSet) Empty() int {
 	}
 }
 
-/**
-  Generates a string representing the indexing results of this set
-*/
-func (ss *sdbfSet) IndexResults() string {
-	var sb strings.Builder
-	for _, sd := range ss.items {
-		sb.WriteString(sd.GetIndexResults())
-	}
-	return sb.String()
-}
 
 /**
   Generates a string which contains the output-encoded sdbfs in this set
   \returns std::string containing sdbfs.
 */
-func (ss *sdbfSet) String() string {
+func (ss *SdbfSet) String() string {
 	var sb strings.Builder
 	for _, sd := range ss.items {
 		sb.WriteString(sd.String())
@@ -165,7 +156,7 @@ func (ss *sdbfSet) String() string {
   Retrieve name of this set
   \returns string name
 */
-func (ss *sdbfSet) Name() string {
+func (ss *SdbfSet) Name() string {
 	return ss.setname
 }
 
@@ -173,7 +164,7 @@ func (ss *sdbfSet) Name() string {
   Change name of this set
   \param name of  string
 */
-func (ss *sdbfSet) SetName(name string) {
+func (ss *SdbfSet) SetName(name string) {
 	ss.setname = name
 }
 
@@ -181,19 +172,19 @@ func (ss *sdbfSet) SetName(name string) {
   Change comparison output separator
   \param sep charactor separator for output
 */
-func (ss *sdbfSet) SetSeparator(sep byte) {
+func (ss *SdbfSet) SetSeparator(sep byte) {
 	ss.sep = sep
 }
 
 /**
-  Compares each sdbf object in target to every other sdbf object in target
+  Compares each Sdbf object in target to every other Sdbf object in target
   and returns the results as a list stored in a string
 
   \param threshold output threshold, defaults to 1
   \param thread_count processor threads to use, 0 for all available
   \returns std::string result listing
 */
-func (ss *sdbfSet) CompareAll(threshold int32, fast bool) string {
+func (ss *SdbfSet) CompareAll(threshold int32, fast bool) string {
 	end := len(ss.items)
 	var out strings.Builder
 
@@ -223,7 +214,7 @@ func (ss *sdbfSet) CompareAll(threshold int32, fast bool) string {
 }
 
 /**
-  Compares each sdbf object in other to each object in this set, and returns
+  Compares each Sdbf object in other to each object in this set, and returns
   the results as a list stored in a string.
 
   \param other set to compare to
@@ -232,7 +223,7 @@ func (ss *sdbfSet) CompareAll(threshold int32, fast bool) string {
   \param thread_count processor threads to use, 0 for all available
   \returns string result listing
 */
-func (ss *sdbfSet) CompareTo(other *sdbfSet, threshold int32, sampleSize uint32, fast bool) string {
+func (ss *SdbfSet) CompareTo(other *SdbfSet, threshold int32, sampleSize uint32, fast bool) string {
 	tend := other.Size()
 	qend := ss.Size()
 
@@ -267,7 +258,7 @@ func (ss *sdbfSet) CompareTo(other *sdbfSet, threshold int32, sampleSize uint32,
 /**
   Returns the size of the set's own bloom_filter vector.
 */
-func (ss *sdbfSet) FilterCount() uint64 {
+func (ss *SdbfSet) FilterCount() uint64 {
 	return uint64(len(ss.BfVector))
 }
 
@@ -275,11 +266,11 @@ func (ss *sdbfSet) FilterCount() uint64 {
   Sets up bloom filter vector.
   Should also be called by server process when done hashing to a set
 */
-func (ss *sdbfSet) VectorInit() {
+func (ss *SdbfSet) VectorInit() {
 	for i := 0; i < len(ss.items); i++ {
 		for n := uint32(0); n < ss.items[i].FilterCount(); n++ {
 			data := ss.items[i].CloneFilter(n)
-			tmp := NewBloomFilterFromExistingData(data, i, int(GetElemCount(ss.items[i], uint64(n))), ss.items[i].Hamming[n])
+			tmp := sdhash.NewBloomFilterFromExistingData(data, i, int(ss.items[i].GetElemCount(uint64(n))), ss.items[i].Hamming[n])
 			tmp.SetName(ss.items[i].Name())
 			ss.BfVector = append(ss.BfVector, tmp)
 		}

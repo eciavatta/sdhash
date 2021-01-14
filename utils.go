@@ -49,17 +49,8 @@ func u32sha1(data []uint8) [5]uint32 {
 
 	var buf [5]uint32
 	for i := range buf {
-		buf[i] = binary.LittleEndian.Uint32(sha[i*4:(i+1)*4]) // checked: is little endian
+		buf[i] = binary.LittleEndian.Uint32(sha[i*4 : (i+1)*4]) // checked: is little endian
 	}
 
 	return buf
-}
-
-func u32sha1a(data []uint16) [5]uint32 {
-	buf := make([]uint8, len(data) * 2)
-	for i := range data {
-		binary.LittleEndian.PutUint16(buf[i*2:i*2+2], data[i])
-	}
-
-	return u32sha1(buf)
 }

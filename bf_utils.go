@@ -7,11 +7,10 @@ import (
 /**
  * Insert a SHA1 hash into a Bloom filter
  */
-func bfSha1Insert(bf []uint8, bfClass uint8, sha1Hash [5]uint32) uint32 {
+func bfSha1Insert(bf []uint8, sha1Hash [5]uint32) uint32 {
 	var insertCnt uint32
-	bitMask := bfClassMask[bfClass]
 	for i := range sha1Hash {
-		insert := sha1Hash[i] & bitMask
+		insert := sha1Hash[i] & 0x7FF
 		k := insert >> 3
 		if bf[k] & bits[insert & 0x7] == 0 {
 			insertCnt++
