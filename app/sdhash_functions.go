@@ -35,7 +35,7 @@ func hashFiles(files map[string]os.FileInfo, sdbfSearchSet map[string]*sdbfSet) 
 				ddBlockSize = uint32(*blockSize) * KB
 			}
 			logVerbose("digesting file %s using block-size %d", filePath, ddBlockSize)
-			sdbf := factory.WithBlockSize(ddBlockSize).WithInitialIndex(rollIndex).WithSearchIndexes(searchIndexes).Get()
+			sdbf := factory.WithBlockSize(ddBlockSize).WithInitialIndex(rollIndex).WithSearchIndexes(searchIndexes).Compute()
 			if *output != "" {
 				set.AddHash(sdbf)
 			} else if *outputDir != "" {

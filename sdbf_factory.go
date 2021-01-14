@@ -76,6 +76,6 @@ func (sdf *SdbfFactory) WithName(name string) *SdbfFactory {
 	return sdf
 }
 
-func (sdf *SdbfFactory) Get() *Sdbf {
+func (sdf *SdbfFactory) Compute() *Sdbf {
 	return createSdbf(sdf.buffer, sdf.ddBlockSize, sdf.initialIndex, sdf.searchIndexes, sdf.name)
 }

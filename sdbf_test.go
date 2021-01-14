@@ -72,10 +72,10 @@ func CreateSdbfTest(testName string, blockSize uint32, tmpDir string) func(t *te
 				if tc.expectedErr != "" && err != nil {
 					assert.EqualError(t1, err, tc.expectedErr, tc.fileName)
 				} else if err == nil {
-					sdDigest, err := ioutil.ReadFile(fmt.Sprintf("test_data/%s/%s.sdbf", testName, tc.name))
+					sdDigest, err := ioutil.ReadFile(fmt.Sprintf("testdata/%s/%s.sdbf", testName, tc.name))
 					require.NoError(t1, err)
 
-					sd = factory.WithBlockSize(blockSize*kB).WithName(tc.fileName).Get()
+					sd = factory.WithBlockSize(blockSize*kB).WithName(tc.fileName).Compute()
 					expected := fmt.Sprintf(string(sdDigest), len(tc.fileName), tc.fileName)
 					assert.Equal(t1, expected, sd.String())
 					assert.Equal(t1, tc.compareSelfScore, sd.Compare(sd, 0))
@@ -103,7 +103,7 @@ func CreateSdbfTest(testName string, blockSize uint32, tmpDir string) func(t *te
 }
 
 func TestGenericSdbf(t *testing.T) {
-	require.DirExists(t, "test_data")
+	require.DirExists(t, "testdata")
 
 	tmpDir, err := ioutil.TempDir("", "sdhash-test")
 	require.NoError(t, err)

@@ -29,20 +29,16 @@ build_release: clean
 	cd app; gox -arch="amd64" -os="windows darwin" -output="../dist/$(NAME)-{{.Arch}}-{{.OS}}" -ldflags=$(LDFLAGS)
 	cd app; gox -arch="amd64 arm" -os="linux" -output="../dist/$(NAME)-{{.Arch}}-{{.OS}}" -ldflags=$(LDFLAGS)
 
-.PHONY: upx
-upx:
-	cd dist; find . -type f -exec upx "{}" \;
-
 .PHONY: bench
 bench:
 	go test -bench=.
 
 .PHONY: test
-test:
+test: testdata
 	go test -v .
 
 .PHONY: test_coverage
-test_coverage:
+test_coverage: testdata
 	go test -v -coverprofile=coverage.txt -covermode=atomic .
 
 .PHONY: view_coverage
@@ -67,6 +63,7 @@ benchcmp:
 	git stash pop
 	benchcmp bench_head.test bench_current.test
 
-sample:
-	if [ ! -f /tmp/data ]; then \
-	head -c 10M < /dev/urandom > /tmp/data; fi
+testdata:
+	echo "test_data not present. downloading it.."; \
+  	wget https://github.com/eciavatta/sdhash/releases/download/initial-release/testdata.zip; \
+	unzip testdata.zip
