@@ -39,7 +39,7 @@ func createSdbf(buffer []uint8, ddBlockSize uint32, initialIndex *BloomFilter, s
 		sd.index = NewSimpleBloomFilter()
 	}
 	// trying for m/n = 8
-	if bf, err := NewBloomFilter(bigFilter, 5, bigFilterElem, 0.01); err != nil {
+	if bf, err := NewBloomFilter(bigFilter, 5, bigFilterElem); err != nil {
 		panic(err)
 	} else {
 		sd.bigFilters = append(sd.bigFilters, bf)
@@ -67,14 +67,14 @@ func createSdbf(buffer []uint8, ddBlockSize uint32, initialIndex *BloomFilter, s
 }
 
 /**
-  Returns the name of the file or data this Sdbf represents.
+  Returns the name of the file or data this sdbf represents.
 */
 func (sd *Sdbf) Name() string {
 	return sd.hashName
 }
 
 /**
-  Returns the size of the hash data for this Sdbf
+  Returns the size of the hash data for this sdbf
   \returns uint64_t length value
 */
 func (sd *Sdbf) Size() uint64 {
@@ -94,8 +94,8 @@ func (sd *Sdbf) Compare(other *Sdbf, sample uint32) int32 {
 }
 
 /**
-  Encode this Sdbf and return it as a string.
-  \returns std::string containing Sdbf suitable for display or writing to file
+  Encode this sdbf and return it as a string.
+  \returns std::string containing sdbf suitable for display or writing to file
 */
 func (sd *Sdbf) String() string {
 	var sb strings.Builder
@@ -182,7 +182,7 @@ func (sd *Sdbf) Fast() {
 	// for each filter
 	for i := uint32(0); i < sd.bfCount; i++ {
 		data := sd.CloneFilter(i)
-		tmp := NewBloomFilterFromExistingData(data, int(i), int(sd.GetElemCount(uint64(i))), 0)
+		tmp := NewBloomFilterFromExistingData(data, int(sd.GetElemCount(uint64(i))), 0)
 		tmp.Fold(2)
 		tmp.ComputeHamming()
 		sd.Hamming[i] = uint16(tmp.Hamminglg)

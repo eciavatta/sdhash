@@ -101,7 +101,7 @@ func (sd *Sdbf) genChunkHash(fileBuffer []uint8, chunkPos uint64, chunkScores []
 					lastCount = 0
 				}
 				if bigfiCount == sd.bigFilters[len(sd.bigFilters)-1].MaxElem {
-					bf, err := NewBloomFilter(bigFilter, 5, bigFilterElem, 0.01)
+					bf, err := NewBloomFilter(bigFilter, 5, bigFilterElem)
 					if err != nil {
 						panic(err)
 					}
@@ -173,7 +173,7 @@ func (sd *Sdbf) genChunkSdbf(fileBuffer []uint8, chunkSize uint64) {
 	}
 
 	fileSize := uint64(len(fileBuffer))
-	buffSize := ((fileSize >> 11) + 1) << 8 // Estimate Sdbf size (reallocate later)
+	buffSize := ((fileSize >> 11) + 1) << 8 // Estimate sdbf size (reallocate later)
 	sd.buffer = make([]uint8, buffSize)
 
 	// Chunk-based computation

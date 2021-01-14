@@ -121,9 +121,9 @@ func TestGenericSdbf(t *testing.T) {
 		testCases[i].buffer = buf
 	}
 
-	t.Run("Sdbf-stream", CreateSdbfTest("stream", 0, tmpDir))
-	t.Run("Sdbf-block1KB", CreateSdbfTest("block1kb", 1, tmpDir))
-	t.Run("Sdbf-block16KB", CreateSdbfTest("block16kb", 16, tmpDir))
+	t.Run("sdbf-stream", CreateSdbfTest("stream", 0, tmpDir))
+	t.Run("sdbf-block1KB", CreateSdbfTest("block1kb", 1, tmpDir))
+	t.Run("sdbf-block16KB", CreateSdbfTest("block16kb", 16, tmpDir))
 
 	require.NoError(t, os.RemoveAll(tmpDir))
 }

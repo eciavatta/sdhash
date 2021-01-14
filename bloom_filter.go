@@ -40,20 +40,15 @@ type BloomFilter struct {
 	BitMask     uint64  // Bit mask
 	MaxElem     uint64  // Max number of elements
 	HashCount   uint16  // Number of hash functions used (k)
-	maxFp       float64 // Max FP rate
 	bfElemCount uint64  // Actual number of elements inserted
 	compSize    uint64  // size of compressed bf to be read
 	setname     string  // name associated with bloom filter
-	created     bool    // set if we allocated the bloom filter ourselves
-	blId        int
 }
 
-func NewBloomFilter(size uint64, hashCount uint16, maxElem uint64, maxFP float64) (*BloomFilter, error) {
+func NewBloomFilter(size uint64, hashCount uint16, maxElem uint64) (*BloomFilter, error) {
 	bf := &BloomFilter{
 		HashCount: hashCount,
 		MaxElem:   maxElem,
-		maxFp:     maxFP,
-		created:   true,
 	}
 
 	// Make sure size is a power of 2 and at least 64
@@ -72,7 +67,7 @@ func NewBloomFilter(size uint64, hashCount uint16, maxElem uint64, maxFP float64
 }
 
 func NewSimpleBloomFilter() *BloomFilter {
-	if bf, err := NewBloomFilter(64*mB, 5, 0, 0.01); err != nil {
+	if bf, err := NewBloomFilter(64*mB, 5, 0); err != nil {
 		panic(err)
 	} else {
 		return bf
@@ -149,7 +144,7 @@ func NewBloomFilterFromIndexFile(indexFileName string) (*BloomFilter, error) {
 	return bf, err
 }
 
-func NewBloomFilterFromExistingData(data []uint8, id int, bfElemCount int, hamming uint16) *BloomFilter {
+func NewBloomFilterFromExistingData(data []uint8, bfElemCount int, hamming uint16) *BloomFilter {
 	var logSize uint16
 	for tmp := len(data); tmp > 0; tmp, logSize = tmp>>1, logSize+1 {
 	}
@@ -157,10 +152,8 @@ func NewBloomFilterFromExistingData(data []uint8, id int, bfElemCount int, hammi
 		BitMask:     uint64(bitMasks32[logSize+1]),
 		HashCount:   5,
 		bfElemCount: uint64(bfElemCount),
-		blId:        id,
 		Hamming:     hamming,
 		BF:          make([]uint8, 0, len(data)),
-		created:     true,
 	}
 
 	copy(bf.BF, data)
@@ -193,7 +186,7 @@ func (bf *BloomFilter) WriteOut(filename string) error {
 		bf.compSize = uint64(n)
 	}
 
-	if _, err := f.WriteString(fmt.Sprintf("Sdbf-idx:%v:%v:%v:%v:%v:%s\n", len(bf.BF), bf.bfElemCount,
+	if _, err := f.WriteString(fmt.Sprintf("sdbf-idx:%v:%v:%v:%v:%v:%s\n", len(bf.BF), bf.bfElemCount,
 		bf.HashCount, bf.BitMask, bf.compSize, bf.setname)); err != nil {
 		return err
 	}
@@ -208,22 +201,6 @@ func (bf *BloomFilter) WriteOut(filename string) error {
 	}
 
 	return nil
-}
-
-func (bf *BloomFilter) Name() string {
-	return bf.setname
-}
-
-func (bf *BloomFilter) SetName(name string) {
-	bf.setname = name
-}
-
-func (bf *BloomFilter) BloomId() int {
-	return bf.blId
-}
-
-func (bf *BloomFilter) SetBloomId(id int) {
-	bf.blId = id
 }
 
 func (bf *BloomFilter) Fold(times uint32) {
@@ -314,10 +291,7 @@ func (bf *BloomFilter) ComputeHamming() {
 }
 
 func NewBloomFilterFromString(filter string, folds int) (*BloomFilter, error) {
-	bf := &BloomFilter{
-		created: true,
-	}
-
+	bf := &BloomFilter{}
 	var err error
 	r := bufio.NewReader(strings.NewReader(filter))
 	var bfSize uint64
