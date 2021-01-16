@@ -6,6 +6,8 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path"
+	"strings"
 )
 
 type SdbfFactory interface {
@@ -40,7 +42,7 @@ func CreateSdbfFromFilename(filename string) (SdbfFactory, error) {
 		if sdbf, err := CreateSdbfFromBytes(buffer); err != nil {
 			panic(err)
 		} else {
-			sdbf.WithName(filename)
+			sdbf.WithName(path.Base(filename))
 			return sdbf, nil
 		}
 	} else {
@@ -90,7 +92,7 @@ func (sdf *sdbfFactory) WithSearchIndexes(searchIndexes []BloomFilter) SdbfFacto
 
 // WithName sets the name of the Sdbf in the output.
 func (sdf *sdbfFactory) WithName(name string) SdbfFactory {
-	sdf.name = name
+	sdf.name = strings.ReplaceAll(name, ":", "$")
 	return sdf
 }
 
