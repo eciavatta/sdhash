@@ -26,9 +26,8 @@ build_release: clean
 
 .PHONY: test
 test:
-	go test -v -race -coverprofile=coverage.txt -covermode=atomic .
+	go test -v -coverprofile=coverage.txt -covermode=atomic .
 
 .PHONY: coverage
-coverage:
-	go test -v -coverprofile=coverage.txt -covermode=atomic .
+coverage: test
 	go tool cover -html=coverage.txt
