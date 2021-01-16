@@ -6,28 +6,24 @@ import (
 	"strings"
 )
 
-/**
- * Generate ranks for a file chunk.
- */
-func (sd *sdbf) genChunkRanks(fileBuffer []uint8, chunkRanks []uint16) {
+// generateChunkRanks generate ranks for a file chunk.
+func (sd *sdbf) generateChunkRanks(fileBuffer []uint8, chunkRanks []uint16) {
 	var entropy uint64
 	ascii := make([]uint8, 256)
 
-	limit := len(fileBuffer) - EntrWinSize
+	limit := len(fileBuffer) - EntropyWinSize
 	for offset := 0; limit > 0 && offset < limit; offset++ {
 		if offset%BlockSize == 0 { // Initial/sync entropy calculation
-			entropy = entr64InitInt(fileBuffer[offset:], ascii)
+			entropy = entropy64InitInt(fileBuffer[offset:], ascii)
 		} else { // Incremental entropy update (much faster)
-			entropy = entr64IncInt(entropy, fileBuffer[offset-1:], ascii)
+			entropy = entropy64IncInt(entropy, fileBuffer[offset-1:], ascii)
 		}
-		chunkRanks[offset] = uint16(entr64Ranks[entropy>>entrPower])
+		chunkRanks[offset] = uint16(entropy64Ranks[entropy>>entropyPower])
 	}
 }
 
-/**
- * Generate scores for a ranks chunk.
- */
-func (sd *sdbf) genChunkScores(chunkRanks []uint16, chunkSize uint64, chunkScores []uint16, scoreHisto []int32) {
+// generateChunkScores generate scores for a ranks chunk.
+func (sd *sdbf) generateChunkScores(chunkRanks []uint16, chunkSize uint64, chunkScores []uint16, scoreHistogram []int32) {
 	popWin := uint64(PopWinSize)
 	var minPos uint64
 	minRank := chunkRanks[minPos]
@@ -56,21 +52,19 @@ func (sd *sdbf) genChunkScores(chunkRanks []uint16, chunkSize uint64, chunkScore
 			chunkScores[minPos]++
 		}
 	}
-	if scoreHisto != nil {
+	if scoreHistogram != nil {
 		for i := uint64(0); i < chunkSize-popWin; i++ {
-			scoreHisto[chunkScores[i]]++
+			scoreHistogram[chunkScores[i]]++
 		}
 	}
 }
 
-/**
- * Generate SHA1 hashes and add them to the SDBF--original stream version.
- */
-func (sd *sdbf) genChunkHash(fileBuffer []uint8, chunkPos uint64, chunkScores []uint16, chunkSize uint64) {
+// generateChunkHash generate SHA1 hashes and add them to the Sdbf in stream mode.
+func (sd *sdbf) generateChunkHash(fileBuffer []uint8, chunkPos uint64, chunkScores []uint16, chunkSize uint64) {
 	bfCount := sd.bfCount
 	lastCount := sd.lastCount
 	currBf := sd.buffer[(bfCount-1)*sd.bfSize:]
-	var bigfiCount uint64
+	var bigFiltersCount uint64
 
 	if chunkSize > uint64(PopWinSize) {
 		for i := uint64(0); i < chunkSize-uint64(PopWinSize); i++ {
@@ -94,19 +88,19 @@ func (sd *sdbf) genChunkHash(fileBuffer []uint8, chunkPos uint64, chunkScores []
 				}
 
 				lastCount++
-				bigfiCount++
+				bigFiltersCount++
 				if lastCount == sd.maxElem {
 					currBf = currBf[sd.bfSize:]
 					bfCount++
 					lastCount = 0
 				}
-				if bigfiCount == sd.bigFilters[len(sd.bigFilters)-1].MaxElem() {
-					bf, err := NewBloomFilter(bigFilter, 5, bigFilterElem)
+				if bigFiltersCount == sd.bigFilters[len(sd.bigFilters)-1].MaxElem() {
+					bf, err := newBloomFilter(bigFilter, 5, bigFilterElem)
 					if err != nil {
 						panic(err)
 					}
 					sd.bigFilters = append(sd.bigFilters, bf)
-					bigfiCount = 0
+					bigFiltersCount = 0
 				}
 			}
 		}
@@ -116,10 +110,8 @@ func (sd *sdbf) genChunkHash(fileBuffer []uint8, chunkPos uint64, chunkScores []
 	sd.lastCount = lastCount
 }
 
-/**
- * Generate SHA1 hashes and add them to the SDBF--block-aligned version.
- */
-func (sd *sdbf) genBlockHash(fileBuffer []uint8, blockNum uint64, chunkScores []uint16,
+// generateBlockHash generate SHA1 hashes and add them to the Sdbf in block-aligned mode.
+func (sd *sdbf) generateBlockHash(fileBuffer []uint8, blockNum uint64, chunkScores []uint16,
 	blockSize uint64, rem uint32, threshold uint32, allowed int32) {
 	var hashCnt, maxOffset, numIndexMatches uint32
 
@@ -164,10 +156,8 @@ func (sd *sdbf) genBlockHash(fileBuffer []uint8, blockNum uint64, chunkScores []
 	sd.elemCounts[blockNum] = uint16(hashCnt)
 }
 
-/**
- * Generate SDBF hash for a buffer--stream version.
- */
-func (sd *sdbf) genChunkSdbf(fileBuffer []uint8, chunkSize uint64) {
+// generateChunkSdbf generate Sdbf hash for a buffer in the stream mode.
+func (sd *sdbf) generateChunkSdbf(fileBuffer []uint8, chunkSize uint64) {
 	if chunkSize <= uint64(PopWinSize) {
 		panic("chunkSize <= popWinSize")
 	}
@@ -185,15 +175,15 @@ func (sd *sdbf) genChunkSdbf(fileBuffer []uint8, chunkSize uint64) {
 	chunkScores := make([]uint16, chunkSize)
 
 	for i := uint64(0); i < qt; i++ {
-		sd.genChunkRanks(fileBuffer[chunkSize*i:chunkSize*(i+1)], chunkRanks)
-		sd.genChunkScores(chunkRanks, chunkSize, chunkScores, nil)
-		sd.genChunkHash(fileBuffer, chunkPos, chunkScores, chunkSize)
+		sd.generateChunkRanks(fileBuffer[chunkSize*i:chunkSize*(i+1)], chunkRanks)
+		sd.generateChunkScores(chunkRanks, chunkSize, chunkScores, nil)
+		sd.generateChunkHash(fileBuffer, chunkPos, chunkScores, chunkSize)
 		chunkPos += chunkSize
 	}
 	if rem > 0 {
-		sd.genChunkRanks(fileBuffer[qt*chunkSize:], chunkRanks)
-		sd.genChunkScores(chunkRanks, rem, chunkScores, nil)
-		sd.genChunkHash(fileBuffer, chunkPos, chunkScores, rem)
+		sd.generateChunkRanks(fileBuffer[qt*chunkSize:], chunkRanks)
+		sd.generateChunkScores(chunkRanks, rem, chunkScores, nil)
+		sd.generateChunkHash(fileBuffer, chunkPos, chunkScores, rem)
 	}
 
 	// Chop off last buffer if its membership is too low (eliminates some FPs)
@@ -208,34 +198,30 @@ func (sd *sdbf) genChunkSdbf(fileBuffer []uint8, chunkSize uint64) {
 	}
 }
 
-/**
- * Worker thread for multi-threaded block hash generation.  // NOT iN CLASS?
- */
-func (sd *sdbf) threadGenBlockSdbf(index uint64, blockSize uint64, buffer []uint8, ch chan bool) {
+// generateSingleBlockSdbf is the worker for multi goroutine block hash generation.
+func (sd *sdbf) generateSingleBlockSdbf(index uint64, blockSize uint64, buffer []uint8, ch chan bool) {
 	var sum, allowed uint32
-	var scoreHisto [66]int32
+	var scoreHistogram [66]int32
 	chunkRanks := make([]uint16, blockSize)
 	chunkScores := make([]uint16, blockSize)
 
-	sd.genChunkRanks(buffer[blockSize*index:blockSize*(index+1)], chunkRanks)
-	sd.genChunkScores(chunkRanks, blockSize, chunkScores, scoreHisto[:])
+	sd.generateChunkRanks(buffer[blockSize*index:blockSize*(index+1)], chunkRanks)
+	sd.generateChunkScores(chunkRanks, blockSize, chunkScores, scoreHistogram[:])
 	var k uint32
 	for k = 65; k >= Threshold; k-- {
-		if sum <= MaxElemDd && (sum+uint32(scoreHisto[k]) > MaxElemDd) {
+		if sum <= MaxElemDd && (sum+uint32(scoreHistogram[k]) > MaxElemDd) {
 			break
 		}
-		sum += uint32(scoreHisto[k])
+		sum += uint32(scoreHistogram[k])
 	}
 	allowed = MaxElemDd - sum
-	sd.genBlockHash(buffer, index, chunkScores, blockSize, 0, k, int32(allowed))
+	sd.generateBlockHash(buffer, index, chunkScores, blockSize, 0, k, int32(allowed))
 
 	ch <- true
 }
 
-/**
-  dd-mode hash generation.
-*/
-func (sd *sdbf) genBlockSdbfMt(fileBuffer []uint8, ) {
+// Sdbf hash for a buffer in dd-mode.
+func (sd *sdbf) generateBlockSdbf(fileBuffer []uint8, ) {
 	blockSize := uint64(sd.ddBlockSize)
 	qt := uint64(len(fileBuffer)) / blockSize
 	rem := uint64(len(fileBuffer)) % blockSize
@@ -250,7 +236,7 @@ func (sd *sdbf) genBlockSdbfMt(fileBuffer []uint8, ) {
 
 	ch := make(chan bool, qt)
 	for i := uint64(0); i < qt; i++ {
-		go sd.threadGenBlockSdbf(i, blockSize, fileBuffer, ch)
+		go sd.generateSingleBlockSdbf(i, blockSize, fileBuffer, ch)
 	}
 	for i := uint64(0); i < qt; i++ {
 		<-ch
@@ -260,15 +246,13 @@ func (sd *sdbf) genBlockSdbfMt(fileBuffer []uint8, ) {
 		chunkRanks := make([]uint16, blockSize)
 		chunkScores := make([]uint16, blockSize)
 
-		sd.genChunkRanks(fileBuffer[blockSize*qt:blockSize*qt+rem], chunkRanks)
-		sd.genChunkScores(chunkRanks, rem, chunkScores, nil)
-		sd.genBlockHash(fileBuffer, qt, chunkScores, blockSize, uint32(rem), Threshold, int32(sd.maxElem))
+		sd.generateChunkRanks(fileBuffer[blockSize*qt:blockSize*qt+rem], chunkRanks)
+		sd.generateChunkScores(chunkRanks, rem, chunkScores, nil)
+		sd.generateBlockHash(fileBuffer, qt, chunkScores, blockSize, uint32(rem), Threshold, int32(sd.maxElem))
 	}
 }
 
-/**
- * Calculates the score between two digests
- */
+// sdbfScore calculates the score between two Sdbf.
 func (sd *sdbf) sdbfScore(sdbf1 *sdbf, sdbf2 *sdbf, sample uint32) int {
 	var maxScore, scoreSum float64 = -1, -1
 	var bfCount1 uint32
@@ -280,8 +264,7 @@ func (sd *sdbf) sdbfScore(sdbf1 *sdbf, sdbf2 *sdbf, sample uint32) int {
 		sdbf2.computeHamming()
 	}
 
-	// if sampling, set sample count here.
-	if sample > 0 && sdbf1.bfCount > sample {
+	if sample > 0 && sdbf1.bfCount > sample { // if sampling, set sample count here
 		bfCount1 = sample
 	} else {
 		bfCount1 = sdbf1.bfCount
@@ -295,7 +278,6 @@ func (sd *sdbf) sdbfScore(sdbf1 *sdbf, sdbf2 *sdbf, sample uint32) int {
 	}
 
 	var spartsect uint32
-
 	for i := uint32(0); i < bfCount1; i++ {
 		var randOffset uint32 = 1
 		if sample > 0 && bfCount1 > sample {
@@ -311,25 +293,23 @@ func (sd *sdbf) sdbfScore(sdbf1 *sdbf, sdbf2 *sdbf, sample uint32) int {
 			spartsect++
 		}
 	}
-	denom := bfCount1
-	// improving the average.
-	if bfCount1 > 1 {
-		denom -= spartsect
+
+	denominator := bfCount1
+	if bfCount1 > 1 { // improving the average
+		denominator -= spartsect
 	}
-	if denom == 0 {
+	if denominator == 0 {
 		scoreSum--
 	}
 
 	if scoreSum < 0 {
 		return -1
 	} else {
-		return int(math.Round(100.0 * scoreSum / float64(denom)))
+		return int(math.Round(100.0 * scoreSum / float64(denominator)))
 	}
 }
 
-/**
- * Given a buffer and an SDBF, calculates the maximum match (0-100)
- */
+// sdbfMaxScore calculates the maximum match (0-100) of a single block.
 func (sd *sdbf) sdbfMaxScore(refSdbf *sdbf, refIndex uint32, targetSdbf *sdbf) float64 {
 	var score, maxScore float64 = -1, -1
 	bfSize := refSdbf.bfSize

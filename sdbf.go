@@ -47,9 +47,9 @@ func createSdbf(buffer []uint8, ddBlockSize uint32, initialIndex BloomFilter, se
 		searchIndexes: searchIndexes,
 	}
 	if sd.index == nil {
-		sd.index = NewSimpleBloomFilter()
+		sd.index = NewBloomFilter()
 	}
-	if bf, err := NewBloomFilter(bigFilter, 5, bigFilterElem); err != nil {
+	if bf, err := newBloomFilter(bigFilter, 5, bigFilterElem); err != nil {
 		panic(err)
 	} else {
 		sd.bigFilters = append(sd.bigFilters, bf)
@@ -58,7 +58,7 @@ func createSdbf(buffer []uint8, ddBlockSize uint32, initialIndex BloomFilter, se
 	sd.origFileSize = fileSize
 	if ddBlockSize == 0 { // stream mode
 		sd.maxElem = MaxElem
-		sd.genChunkSdbf(buffer, 32*mB)
+		sd.generateChunkSdbf(buffer, 32*mB)
 	} else { // block mode
 		sd.maxElem = MaxElemDd
 		ddBlockCnt := fileSize / uint64(ddBlockSize)
@@ -69,48 +69,41 @@ func createSdbf(buffer []uint8, ddBlockSize uint32, initialIndex BloomFilter, se
 		sd.ddBlockSize = ddBlockSize
 		sd.buffer = make([]uint8, ddBlockCnt*uint64(BfSize))
 		sd.elemCounts = make([]uint16, ddBlockCnt)
-		sd.genBlockSdbfMt(buffer)
+		sd.generateBlockSdbf(buffer)
 	}
 	sd.computeHamming()
 
 	return sd
 }
 
-/**
-  Returns the name of the file or data this sdbf represents.
-*/
+// Name of the of the file or data this Sdbf represents.
 func (sd *sdbf) Name() string {
 	return sd.hashName
 }
 
-/**
-  Returns the size of the hash data for this sdbf
-  \returns uint64_t length value
-*/
+// Size of the hash data for this Sdbf.
 func (sd *sdbf) Size() uint64 {
 	return uint64(sd.bfSize) * uint64(sd.bfCount)
 }
 
-/**
-  Returns the size of the data that the hash was generated from.
-  \returns uint64_t length value
-*/
+// InputSize of the data that the hash was generated from.
 func (sd *sdbf) InputSize() uint64 {
 	return sd.origFileSize
 }
 
+// Compare two Sdbf and provide a similarity score ranges between 0 and 100.
+// A score of 0 means that the two files are very different, a score of 100 means that the two files are equals.
 func (sd *sdbf) Compare(other Sdbf) int {
 	return sd.CompareSample(other, 0)
 }
 
+// CompareSample compare two Sdbf with sampling and provide a similarity score ranges between 0 and 100.
+// A score of 0 means that the two files are very different, a score of 100 means that the two files are equals.
 func (sd *sdbf) CompareSample(other Sdbf, sample uint32) int {
 	return sd.sdbfScore(sd, other.(*sdbf), sample)
 }
 
-/**
-  Encode this sdbf and return it as a string.
-  \returns std::string containing sdbf suitable for display or writing to file
-*/
+// String returns the encoded Sdbf as a string.
 func (sd *sdbf) String() string {
 	var sb strings.Builder
 	if sd.elemCounts == nil {
@@ -143,33 +136,31 @@ func (sd *sdbf) String() string {
 	return sb.String()
 }
 
+// GetIndex returns the BloomFilter index used during the digesting process.
 func (sd *sdbf) GetIndex() BloomFilter {
 	return sd.index
 }
 
+// FilterCount returns the number of bloom filters count.
 func (sd *sdbf) FilterCount() uint32 {
 	return sd.bfCount
 }
 
-/**
-  Temporary destructive fast filter comparison.
-*/
+// Fast modify the bloom filter buffer for faster comparison.
+// Warning: the operation overwrite the original buffer.
 func (sd *sdbf) Fast() {
-	// for each filter
 	for i := uint32(0); i < sd.bfCount; i++ {
 		data := sd.cloneFilter(i)
 		tmp := newBloomFilterFromExistingData(data, int(sd.getElemCount(uint64(i))))
 		tmp.fold(2)
 		tmp.computeHamming()
 		sd.hamming[i] = uint16(tmp.hamming)
-		copy(sd.buffer[i*sd.bfSize:i*sd.bfSize+sd.bfSize], tmp.buffer)
+		copy(sd.buffer[i*sd.bfSize:(i+1)*sd.bfSize], tmp.buffer)
 	}
 	sd.fastMode = true
 }
 
-/**
-  get element count for comparisons
-*/
+// getElemCount returns element count for comparisons
 func (sd *sdbf) getElemCount(index uint64) int32 {
 	var ret uint32
 	if sd.elemCounts == nil {
@@ -185,9 +176,7 @@ func (sd *sdbf) getElemCount(index uint64) int32 {
 	return int32(ret)
 }
 
-/**
- * Pre-compute hamming weights for each buffer and adds them to the SDBF descriptor.
- */
+// computeHamming pre-compute hamming weights for each buffer and adds them to the Sdbf descriptor.
 func (sd *sdbf) computeHamming() int {
 	sd.hamming = make([]uint16, sd.bfCount)
 	for i := uint32(0); i < sd.bfCount; i++ {
@@ -196,10 +185,11 @@ func (sd *sdbf) computeHamming() int {
 	return 0
 }
 
+// cloneFilter returns a copy of the buffer of bfSize length at index position.
 func (sd *sdbf) cloneFilter(position uint32) []uint8 {
 	if position < sd.bfCount {
 		filter := make([]uint8, sd.bfSize)
-		copy(filter, sd.buffer[position*sd.bfSize:position*sd.bfSize+sd.bfSize])
+		copy(filter, sd.buffer[position*sd.bfSize:(position+1)*sd.bfSize])
 		return filter
 	}
 	return nil

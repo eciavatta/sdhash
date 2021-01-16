@@ -24,6 +24,7 @@ type sdbfFactory struct {
 	name          string
 }
 
+// CreateSdbfFromFilename returns a factory which can produce a Sdbf of a file.
 func CreateSdbfFromFilename(filename string) (SdbfFactory, error) {
 	info, err := os.Stat(filename)
 	if err != nil {
@@ -47,6 +48,7 @@ func CreateSdbfFromFilename(filename string) (SdbfFactory, error) {
 	}
 }
 
+// CreateSdbfFromBytes returns a factory which can produce a Sdbf from a bytes buffer.
 func CreateSdbfFromBytes(buffer []uint8) (SdbfFactory, error) {
 	if len(buffer) < minFileSize {
 		return nil, errors.New(fmt.Sprintf("the length of buffer must be greater than %d", minFileSize))
@@ -56,6 +58,7 @@ func CreateSdbfFromBytes(buffer []uint8) (SdbfFactory, error) {
 	}, nil
 }
 
+// CreateSdbfFromReader returns a factory which can produce a Sdbf from a io.Reader.
 func CreateSdbfFromReader(r io.Reader) (SdbfFactory, error) {
 	if buffer, err := ioutil.ReadAll(r); err == nil {
 		return CreateSdbfFromBytes(buffer)
@@ -64,26 +67,34 @@ func CreateSdbfFromReader(r io.Reader) (SdbfFactory, error) {
 	}
 }
 
+// WithBlockSize sets the block size for the block mode.
+// The default value of 0 involves in a Sdbf generated in stream mode.
 func (sdf *sdbfFactory) WithBlockSize(blockSize uint32) SdbfFactory {
 	sdf.ddBlockSize = blockSize
 	return sdf
 }
 
+// WithInitialIndex sets the initial BloomFilter index.
+// Without setting an initial index the factory creates a new empty BloomFilter.
 func (sdf *sdbfFactory) WithInitialIndex(initialIndex BloomFilter) SdbfFactory {
 	sdf.initialIndex = initialIndex
 	return sdf
 }
 
+// WithSearchIndexes sets a list of BloomFilter which are checked for similarity during digesting process.
+// Without setting a value the searching operation during the digesting process is disabled.
 func (sdf *sdbfFactory) WithSearchIndexes(searchIndexes []BloomFilter) SdbfFactory {
 	sdf.searchIndexes = searchIndexes
 	return sdf
 }
 
+// WithName sets the name of the Sdbf in the output.
 func (sdf *sdbfFactory) WithName(name string) SdbfFactory {
 	sdf.name = name
 	return sdf
 }
 
+// Compute start the digesting process and provide a Sdbf with the result.
 func (sdf *sdbfFactory) Compute() Sdbf {
 	return createSdbf(sdf.buffer, sdf.ddBlockSize, sdf.initialIndex, sdf.searchIndexes, sdf.name)
 }

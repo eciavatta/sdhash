@@ -9,7 +9,6 @@ import (
 	"github.com/pierrec/lz4"
 	"io"
 	"io/ioutil"
-	"math"
 	bits2 "math/bits"
 	"os"
 	"strconv"
@@ -22,24 +21,12 @@ var bitMasks32 = []uint32{
 	0x01FFFF, 0x03FFFF, 0x07FFFF, 0x0FFFFF, 0x1FFFFF, 0x3FFFFF, 0x7FFFFF, 0xFFFFFF,
 	0x01FFFFFF, 0x03FFFFFF, 0x07FFFFFF, 0x0FFFFFFF, 0x1FFFFFFF, 0x3FFFFFFF, 0x7FFFFFFF, 0xFFFFFFFF,
 }
-var cutoffs = []uint32{
-	86511, 86511, 86511, 86511, 67010, 52623, 42139, 34377, 28532, 24026, 20499, 17687, 15407, 13535, 11982,
-	10685, 9589, 8652, 7846, 7149, 6541, 6008, 5537, 5121, 4745, 4413, 4115, 3850,
-	3606, 3388, 3185, 3001, 2834, 2681, 2538, 2407, 2287, 2176, 2072, 1977, 1888, 1802,
-	1724, 1651, 1583, 1519, 1458, 1402, 1348, 1298, 1248, 1204, 1161, 1120, 1083, 1047,
-	1013, 981, 949, 921, 892, 866, 839, 815, 791, 768, 747, 726, 706, 688, 669, 652,
-	635, 619, 603, 589, 575, 561, 546, 533, 521, 510, 498, 487, 476, 467, 456, 447,
-	438, 429, 420, 411, 403, 395, 387, 380, 373, 365, 358, 351, 345, 338, 332, 326,
-	320, 314, 309, 303, 298, 293, 288, 284, 279, 275, 271, 266, 262, 258, 254, 250,
-	246, 242, 238, 235, 231, 228, 225, 221, 218,
-}
 
 type BloomFilter interface {
 	ElemCount() uint64
 	MaxElem() uint64
 	BitsPerElem() float64
 	WriteToFile(filename string) error
-	Compare(other BloomFilter) int
 	String() string
 
 	insertSha1(sha1 []uint32) bool
@@ -57,35 +44,16 @@ type bloomFilter struct {
 	name        string  // name associated with bloom filter
 }
 
-func NewBloomFilter(size uint64, hashCount uint16, maxElem uint64) (BloomFilter, error) {
-	bf := &bloomFilter{
-		hashCount: hashCount,
-		maxElem:   maxElem,
-	}
-
-	// Make sure size is a power of 2 and at least 64
-	if size >= 64 && (size&(size-1)) == 0 {
-		var logSize uint16
-		for tmp := size; tmp > 0; tmp, logSize = tmp>>1, logSize+1 {
-		}
-		bf.bitMask = uint64(bitMasks32[logSize+1])
-	} else {
-		return nil, errors.New("invalid size")
-	}
-
-	bf.buffer = make([]uint8, size)
-
-	return bf, nil
-}
-
-func NewSimpleBloomFilter() BloomFilter {
-	if bf, err := NewBloomFilter(64*mB, 5, 0); err != nil {
+// NewBloomFilter returns a new BloomFilter with the default initial values.
+func NewBloomFilter() BloomFilter {
+	if bf, err := newBloomFilter(64*mB, 5, 0); err != nil {
 		panic(err)
 	} else {
 		return bf
 	}
 }
 
+// NewBloomFilterFromIndexFile read a BloomFilter serialized into a file.
 func NewBloomFilterFromIndexFile(indexFileName string) (BloomFilter, error) {
 	buffer, err := ioutil.ReadFile(indexFileName)
 	if err != nil {
@@ -107,6 +75,7 @@ func NewBloomFilterFromIndexFile(indexFileName string) (BloomFilter, error) {
 	return bf, err
 }
 
+// NewBloomFilterFromString create a new BloomFilter from a serialized string.
 func NewBloomFilterFromString(filter string) (BloomFilter, error) {
 	var err error
 	r := bufio.NewReader(strings.NewReader(filter))
@@ -135,6 +104,27 @@ func NewBloomFilterFromString(filter string) (BloomFilter, error) {
 	return bf, err
 }
 
+func newBloomFilter(size uint64, hashCount uint16, maxElem uint64) (*bloomFilter, error) {
+	bf := &bloomFilter{
+		hashCount: hashCount,
+		maxElem:   maxElem,
+	}
+
+	// Make sure size is a power of 2 and at least 64
+	if size >= 64 && (size&(size-1)) == 0 {
+		var logSize uint16
+		for tmp := size; tmp > 0; tmp, logSize = tmp>>1, logSize+1 {
+		}
+		bf.bitMask = uint64(bitMasks32[logSize+1])
+	} else {
+		return nil, errors.New("invalid size")
+	}
+
+	bf.buffer = make([]uint8, size)
+
+	return bf, nil
+}
+
 func newBloomFilterFromExistingData(data []uint8, bfElemCount int) *bloomFilter {
 	var logSize uint16
 	for tmp := len(data); tmp > 0; tmp, logSize = tmp>>1, logSize+1 {
@@ -152,18 +142,22 @@ func newBloomFilterFromExistingData(data []uint8, bfElemCount int) *bloomFilter 
 	return bf
 }
 
+// ElemCount returns the number of elements in the BloomFilter.
 func (bf *bloomFilter) ElemCount() uint64 {
 	return bf.bfElemCount
 }
 
+// MaxElem returns the maximum number of elements that can be present in the BloomFilter.
 func (bf *bloomFilter) MaxElem() uint64 {
 	return bf.maxElem
 }
 
+// BitsPerElem returns the number of bits for each elements of the BloomFilter.
 func (bf *bloomFilter) BitsPerElem() float64 {
 	return float64(len(bf.buffer)<<3) / float64(bf.bfElemCount)
 }
 
+// WriteToFile serialize the current BloomFilter to a file specified by filename.
 func (bf *bloomFilter) WriteToFile(filename string) error {
 	f, err := os.Create(filename)
 	if err != nil {
@@ -190,47 +184,7 @@ func (bf *bloomFilter) WriteToFile(filename string) error {
 	return nil
 }
 
-func (bf *bloomFilter) Compare(other BloomFilter) int {
-	ot := other.(*bloomFilter)
-
-	if len(bf.buffer) != len(ot.buffer) {
-		return -1
-	}
-	var res uint32
-	for i := 0; i < len(bf.buffer); i++ {
-		res += uint32(bits2.OnesCount8(bf.buffer[i] & ot.buffer[i]))
-	}
-
-	var maxEst uint32
-	if bf.hamming < ot.hamming {
-		maxEst = bf.hamming
-	} else {
-		maxEst = ot.hamming
-	}
-
-	if bf.bfElemCount < 32 || ot.ElemCount() < 32 {
-		return 0
-	}
-
-	mn := (16 * len(bf.buffer)) / int(bf.bfElemCount+ot.ElemCount())
-
-	var cutOff uint32
-	if mn > 128 {
-		cutOff = cutoffs[128] - uint32(mn-128) // setting the cutoff to cutoff -n
-	} else {
-		cutOff = cutoffs[mn]
-	}
-	if cutOff < 0 {
-		return 0
-	}
-
-	if res > cutOff {
-		return int(math.Round(100 * (float64(res-cutOff) / float64(maxEst-cutOff))))
-	} else {
-		return 0
-	}
-}
-
+// String returns the serialized representation of the BloomFilter.
 func (bf *bloomFilter) String() string {
 	if header, buf, err := bf.serialize(); err != nil {
 		return err.Error()

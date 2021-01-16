@@ -3,21 +3,21 @@ package sdhash
 import "math"
 
 var (
-	BfSize      uint32 = 256
-	PopWinSize  uint32 = 64
-	MaxElem     uint32 = 160
-	MaxElemDd   uint32 = 192
-	Threshold   uint32 = 16
-	BlockSize          = 4 * kB
-	EntrWinSize        = 64
+	BfSize         uint32 = 256
+	PopWinSize     uint32 = 64
+	MaxElem        uint32 = 160
+	MaxElemDd      uint32 = 192
+	Threshold      uint32 = 16
+	BlockSize             = 4 * kB
+	EntropyWinSize        = 64
 )
 
 const (
 	kB           = 1024
 	mB           = kB * kB
 	bins         = 1000
-	entrPower    = 10
-	entrScale    = bins * (1 << entrPower)
+	entropyPower = 10
+	entropyScale = bins * (1 << entropyPower)
 	minElemCount = 16
 
 	minFileSize   = 512
@@ -32,7 +32,7 @@ const (
 	defaultHashCount = 5
 )
 
-var entr64Ranks = []uint32{
+var entropy64Ranks = []uint32{
 	000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000,
 	000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000,
 	000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000, 000,
@@ -127,35 +127,27 @@ func init() {
 	// init entropy64Int
 	for i := 1; i <= 64; i++ {
 		p := float64(i) / 64
-		entropy64Int[i] = uint64((-p * (math.Log(p) / math.Log(2)) / 6) * entrScale)
+		entropy64Int[i] = uint64((-p * (math.Log(p) / math.Log(2)) / 6) * entropyScale)
 	}
 }
 
-/*
- * 64-byte entropy function implementations
- */
-
-/**
-Baseline entropy computation for a 64-byte buffer--int64 version (to be called periodically)
-*/
-func entr64InitInt(buffer []uint8, ascii []uint8) uint64 {
+// entropy64InitInt does a baseline entropy computation for a 64-byte buffer (int64 version, to be called periodically)
+func entropy64InitInt(buffer []uint8, ascii []uint8) uint64 {
 	memsetU8(ascii, 0)
 	for i := 0; i < 64; i++ {
 		ascii[buffer[i]]++
 	}
-	var entr uint64
+	var entropy uint64
 	for i := 0; i < 256; i++ {
 		if ascii[i] > 0 {
-			entr += entropy64Int[ascii[i]]
+			entropy += entropy64Int[ascii[i]]
 		}
 	}
-	return entr
+	return entropy
 }
 
-/**
- * Incremental (rolling) update to entropy computation--int64 version
- */
-func entr64IncInt(prevEntropy uint64, buffer []uint8, ascii []uint8) uint64 {
+// entropy64IncInt does an incremental (rolling) update to entropy computation (int64 version)
+func entropy64IncInt(prevEntropy uint64, buffer []uint8, ascii []uint8) uint64 {
 	if buffer[0] == buffer[64] {
 		return prevEntropy
 	}
@@ -176,8 +168,8 @@ func entr64IncInt(prevEntropy uint64, buffer []uint8, ascii []uint8) uint64 {
 	entropy := int64(prevEntropy) - oldDiff + newDiff
 	if entropy < 0 {
 		entropy = 0
-	} else if entropy > entrScale {
-		entropy = entrScale
+	} else if entropy > entropyScale {
+		entropy = entropyScale
 	}
 
 	return uint64(entropy)

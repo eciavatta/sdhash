@@ -11,7 +11,7 @@ import (
 func hashFiles(files map[string]os.FileInfo, sdbfSearchSet map[string]*sdbfSet) error {
 	var rollIndex sdhash.BloomFilter
 	if *index && *output != "" {
-		rollIndex = sdhash.NewSimpleBloomFilter()
+		rollIndex = sdhash.NewBloomFilter()
 	}
 	var searchIndexesNames []string
 	var searchIndexes []sdhash.BloomFilter

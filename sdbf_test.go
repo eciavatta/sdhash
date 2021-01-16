@@ -19,7 +19,6 @@ type testCase struct {
 	fileName         string
 	buffer           []byte
 	compareSelfScore int
-	compareSelfBfScore int
 }
 
 var testCases = []testCase{
@@ -41,25 +40,21 @@ var testCases = []testCase{
 		name:             "block-sized",
 		length:           kB,
 		compareSelfScore: 100,
-		compareSelfBfScore: 0,
 	},
 	{
 		name:             "rem-block",
 		length:           kB*16 + 31,
 		compareSelfScore: 100,
-		compareSelfBfScore: 0,
 	},
 	{
 		name:             "medium",
 		length:           mB,
 		compareSelfScore: 100,
-		compareSelfBfScore: 0,
 	},
 	{
 		name:             "large",
 		length:           mB,
 		compareSelfScore: 100,
-		compareSelfBfScore: 0,
 	},
 	//{
 	//	name: "very-large",
@@ -97,14 +92,11 @@ func CreateSdbfTest(testName string, blockSize uint32, tmpDir string) func(t *te
 					require.NoError(t, err)
 					bfFromIndexFile := bfFromIndexFileInt.(*bloomFilter)
 
-					assert.Equal(t1, tc.compareSelfBfScore, bf.Compare(bf))
-
 					assert.Equal(t1, sha1.Sum(bf.buffer), sha1.Sum(bfFromIndexFile.buffer))
 					assert.Equal(t1, bf.hashCount, bfFromIndexFile.hashCount)
 					assert.Equal(t1, bf.bitMask, bfFromIndexFile.bitMask)
 					assert.Equal(t1, bf.compSize, bfFromIndexFile.compSize)
 					assert.Equal(t1, bf.name, bfFromIndexFile.name)
-					//assert.Equal(t1, tc.compareSelfBfScore, bf.Compare(bfFromIndexFile))
 
 					bfFromStringInt, err := NewBloomFilterFromString(bf.String())
 					assert.NoError(t1, err)
@@ -115,7 +107,6 @@ func CreateSdbfTest(testName string, blockSize uint32, tmpDir string) func(t *te
 					assert.Equal(t1, bf.bitMask, bfFromString.bitMask)
 					assert.Equal(t1, bf.compSize, bfFromString.compSize)
 					assert.Equal(t1, bf.name, bfFromString.name)
-					//assert.Equal(t1, tc.compareSelfBfScore, bf.Compare(bfFromString))
 				}
 			})
 		}
