@@ -8,15 +8,23 @@ import (
 	"os"
 )
 
-type SdbfFactory struct {
-	buffer []uint8
-	ddBlockSize uint32
-	initialIndex *BloomFilter
-	searchIndexes []*BloomFilter
-	name string
+type SdbfFactory interface {
+	WithBlockSize(blockSize uint32) SdbfFactory
+	WithInitialIndex(initialIndex BloomFilter) SdbfFactory
+	WithSearchIndexes(searchIndexes []BloomFilter) SdbfFactory
+	WithName(name string) SdbfFactory
+	Compute() Sdbf
 }
 
-func CreateSdbfFromFilename(filename string) (*SdbfFactory, error) {
+type sdbfFactory struct {
+	buffer        []uint8
+	ddBlockSize   uint32
+	initialIndex  BloomFilter
+	searchIndexes []BloomFilter
+	name          string
+}
+
+func CreateSdbfFromFilename(filename string) (SdbfFactory, error) {
 	info, err := os.Stat(filename)
 	if err != nil {
 		return nil, err
@@ -31,7 +39,7 @@ func CreateSdbfFromFilename(filename string) (*SdbfFactory, error) {
 		if sdbf, err := CreateSdbfFromBytes(buffer); err != nil {
 			panic(err)
 		} else {
-			sdbf.name = filename
+			sdbf.WithName(filename)
 			return sdbf, nil
 		}
 	} else {
@@ -39,16 +47,16 @@ func CreateSdbfFromFilename(filename string) (*SdbfFactory, error) {
 	}
 }
 
-func CreateSdbfFromBytes(buffer []uint8) (*SdbfFactory, error) {
+func CreateSdbfFromBytes(buffer []uint8) (SdbfFactory, error) {
 	if len(buffer) < minFileSize {
 		return nil, errors.New(fmt.Sprintf("the length of buffer must be greater than %d", minFileSize))
 	}
-	return &SdbfFactory{
+	return &sdbfFactory{
 		buffer: buffer,
 	}, nil
 }
 
-func CreateSdbfFromReader(r io.Reader) (*SdbfFactory, error) {
+func CreateSdbfFromReader(r io.Reader) (SdbfFactory, error) {
 	if buffer, err := ioutil.ReadAll(r); err == nil {
 		return CreateSdbfFromBytes(buffer)
 	} else {
@@ -56,26 +64,26 @@ func CreateSdbfFromReader(r io.Reader) (*SdbfFactory, error) {
 	}
 }
 
-func (sdf *SdbfFactory) WithBlockSize(blockSize uint32) *SdbfFactory {
+func (sdf *sdbfFactory) WithBlockSize(blockSize uint32) SdbfFactory {
 	sdf.ddBlockSize = blockSize
 	return sdf
 }
 
-func (sdf *SdbfFactory) WithInitialIndex(initialIndex *BloomFilter) *SdbfFactory {
+func (sdf *sdbfFactory) WithInitialIndex(initialIndex BloomFilter) SdbfFactory {
 	sdf.initialIndex = initialIndex
 	return sdf
 }
 
-func (sdf *SdbfFactory) WithSearchIndexes(searchIndexes []*BloomFilter) *SdbfFactory {
+func (sdf *sdbfFactory) WithSearchIndexes(searchIndexes []BloomFilter) SdbfFactory {
 	sdf.searchIndexes = searchIndexes
 	return sdf
 }
 
-func (sdf *SdbfFactory) WithName(name string) *SdbfFactory {
+func (sdf *sdbfFactory) WithName(name string) SdbfFactory {
 	sdf.name = name
 	return sdf
 }
 
-func (sdf *SdbfFactory) Compute() *Sdbf {
+func (sdf *sdbfFactory) Compute() Sdbf {
 	return createSdbf(sdf.buffer, sdf.ddBlockSize, sdf.initialIndex, sdf.searchIndexes, sdf.name)
 }

@@ -9,15 +9,15 @@ import (
 )
 
 func hashFiles(files map[string]os.FileInfo, sdbfSearchSet map[string]*sdbfSet) error {
-	var rollIndex *sdhash.BloomFilter
+	var rollIndex sdhash.BloomFilter
 	if *index && *output != "" {
 		rollIndex = sdhash.NewSimpleBloomFilter()
 	}
 	var searchIndexesNames []string
-	var searchIndexes []*sdhash.BloomFilter
+	var searchIndexes []sdhash.BloomFilter
 	if sdbfSearchSet != nil {
 		searchIndexesNames = make([]string, 0, len(sdbfSearchSet))
-		searchIndexes = make([]*sdhash.BloomFilter, 0, len(sdbfSearchSet))
+		searchIndexes = make([]sdhash.BloomFilter, 0, len(sdbfSearchSet))
 		for filePath, set := range sdbfSearchSet {
 			searchIndexesNames = append(searchIndexesNames, filePath)
 			searchIndexes = append(searchIndexes, set.Index)
@@ -44,7 +44,7 @@ func hashFiles(files map[string]os.FileInfo, sdbfSearchSet map[string]*sdbfSet) 
 					return err
 				}
 				if *index {
-					if err := sdbf.GetIndex().WriteOut(outputFilePath + ".idx"); err != nil {
+					if err := sdbf.GetIndex().WriteToFile(outputFilePath + ".idx"); err != nil {
 						return err
 					}
 				}
@@ -62,7 +62,7 @@ func hashFiles(files map[string]os.FileInfo, sdbfSearchSet map[string]*sdbfSet) 
 			return err
 		}
 		if *index {
-			if err := set.Index.WriteOut(outputFilePath + ".idx"); err != nil {
+			if err := set.Index.WriteToFile(outputFilePath + ".idx"); err != nil {
 				return err
 			}
 		}

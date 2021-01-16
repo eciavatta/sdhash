@@ -1,8 +1,9 @@
-# sdhash
+# [WIP] sdhash
 
-sdhash is a tool that process binary data and produces similarity digests. Two binary files with common parts produces
-two similar digests. sdhash is able to compare the similarity digests to produce a score.
-A score close to 0 means that two file are very different, a score equals to 100 means that two file are equals.
+sdhash is a tool that processes binary data and produces similarity digests using bloom filters.
+Two binary files with common parts produces two similar digests.
+sdhash is able to compare the similarity digests to produce a score.
+A score close to 0 means that two file are very different, a score equals to 100 means that two file are equal.
 
 ## Features
 - calculate similarity digest of many files in a short time

@@ -17,12 +17,12 @@ const Version = "sdhash 4.0, the similarity hashing tool which use bloom filters
 
 const (
 	KB = 1024
-	MB = KB*KB
+	MB = KB * KB
 )
 
 var deep = flag.Bool("r", false, "generate SDBFs from directories and files")
 var targetList = flag.String("f", "", "generate SDBFs from list(s) of filenames")
-var compare = flag.Bool("c", false,"compare SDBFs in file, or two SDBF files")
+var compare = flag.Bool("c", false, "compare SDBFs in file, or two SDBF files")
 var genCompare = flag.Bool("g", false, "compare all pairs in source data")
 var threshold = flag.Int("t", 16, "only show results >=threshold")
 var blockSize = flag.Int("b", -1, "hashes input files in nKB blocks")
@@ -39,10 +39,9 @@ var indexSearch = flag.String("index-search", "", "search directory of reference
 var verbose = flag.Bool("verbose", true, "warnings, debug and progress output")
 var version = flag.Bool("version", false, "produce help message")
 
-
 func main() {
 	flag.Usage = func() {
-		_, _ = fmt.Fprint(os.Stderr, Version + "\n")
+		_, _ = fmt.Fprint(os.Stderr, Version+"\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -87,7 +86,7 @@ func run(inputList []string) {
 	var filesToHash map[string]os.FileInfo
 	if len(inputList) == 1 && inputList[0] == "-" && *targetList == "" {
 		if *segmentSize == 0 {
-			*segmentSize = 128*MB
+			*segmentSize = 128 * MB
 		}
 		if *blockSize <= 0 {
 			*blockSize = 16
@@ -108,7 +107,7 @@ func run(inputList []string) {
 	}
 	if *genCompare {
 		set1.SetSeparator((*separator)[0])
-		results := set1.CompareAll(int32(*threshold), *fast)
+		results := set1.CompareAll(*threshold, *fast)
 		writeCompareResults(results)
 	} else {
 		// todo:
@@ -116,7 +115,7 @@ func run(inputList []string) {
 }
 
 func loadIndexSearchFiles(sdbfFiles map[string]*sdbfSet) error {
-	indexFiles := make(map[string]*sdhash.BloomFilter)
+	indexFiles := make(map[string]sdhash.BloomFilter)
 
 	if *blockSize == 0 {
 		return errors.New("index searching only supported in block mode")
@@ -169,9 +168,9 @@ func compareSdbf(inputList []string) error {
 		if len(inputList) == 2 {
 			set2 := NewSdbfSetFromFileName(inputList[1])
 			set2.SetSeparator((*separator)[0])
-			results = set1.CompareTo(set2, int32(*threshold), uint32(*sampleSize), *fast)
+			results = set1.CompareTo(set2, *threshold, uint32(*sampleSize), *fast)
 		} else {
-			results = set1.CompareAll(int32(*threshold), *fast)
+			results = set1.CompareAll(*threshold, *fast)
 		}
 
 		writeCompareResults(results)
@@ -234,7 +233,7 @@ func listFilesToHash(inputList []string) (map[string]os.FileInfo, error) {
 
 func writeCompareResults(results string) {
 	if *output != "" {
-		if err := ioutil.WriteFile(*output + ".compare", []byte(results), 0644); err != nil {
+		if err := ioutil.WriteFile(*output+".compare", []byte(results), 0644); err != nil {
 			logFatal("failed to write compare results: %s", err)
 		}
 	} else {
@@ -243,16 +242,16 @@ func writeCompareResults(results string) {
 }
 
 func logFatal(message string, args ...interface{}) {
-	_, _ = fmt.Fprintf(os.Stderr, "error: " + message + "\n", args...)
+	_, _ = fmt.Fprintf(os.Stderr, "error: "+message+"\n", args...)
 	os.Exit(1)
 }
 
 func logWarning(message string, args ...interface{}) {
-	_, _ = fmt.Fprintf(os.Stderr, "warning: " + message + "\n", args...)
+	_, _ = fmt.Fprintf(os.Stderr, "warning: "+message+"\n", args...)
 }
 
 func logVerbose(message string, args ...interface{}) {
 	if *verbose {
-		_, _ = fmt.Fprintf(os.Stderr, "verbose: " + message + "\n", args...)
+		_, _ = fmt.Fprintf(os.Stderr, "verbose: "+message+"\n", args...)
 	}
 }

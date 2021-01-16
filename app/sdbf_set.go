@@ -10,9 +10,9 @@ import (
 )
 
 type sdbfSet struct {
-	Index *sdhash.BloomFilter
-	items []*sdhash.Sdbf
-	sep byte
+	Index        sdhash.BloomFilter
+	items        []sdhash.Sdbf
+	sep          byte
 	addHashMutex sync.Mutex
 }
 
@@ -20,10 +20,10 @@ type sdbfSet struct {
   Creates empty sdbf_set with an index
   \param index to insert new items into
 */
-func NewSdbfSetFromIndex(index *sdhash.BloomFilter) *sdbfSet {
+func NewSdbfSetFromIndex(index sdhash.BloomFilter) *sdbfSet {
 	return &sdbfSet{
 		Index: index,
-		sep:      '|',
+		sep:   '|',
 	}
 }
 
@@ -34,8 +34,8 @@ func NewSdbfSetFromIndex(index *sdhash.BloomFilter) *sdbfSet {
 func NewSdbfSetFromFileName(fname string) *sdbfSet {
 	ss := &sdbfSet{
 		Index: nil, // right now we cannot read-in an index, but we can set one later
-		sep:      '|',
-		items: make([]*sdhash.Sdbf, 0),
+		sep:   '|',
+		items: make([]sdhash.Sdbf, 0),
 	}
 
 	if file, err := os.Open(fname); err == nil {
@@ -59,7 +59,7 @@ func NewSdbfSetFromFileName(fname string) *sdbfSet {
   Adds a single hash to this set
   \param hash an existing sdbf hash
 */
-func (ss *sdbfSet) AddHash(hash *sdhash.Sdbf) {
+func (ss *sdbfSet) AddHash(hash sdhash.Sdbf) {
 	ss.addHashMutex.Lock()
 	ss.items = append(ss.items, hash)
 	ss.addHashMutex.Unlock()
@@ -105,7 +105,7 @@ func (ss *sdbfSet) SetSeparator(sep byte) {
   \param thread_count processor threads to use, 0 for all available
   \returns std::string result listing
 */
-func (ss *sdbfSet) CompareAll(threshold int32, fast bool) string {
+func (ss *sdbfSet) CompareAll(threshold int, fast bool) string {
 	end := len(ss.items)
 	var out strings.Builder
 
@@ -119,7 +119,7 @@ func (ss *sdbfSet) CompareAll(threshold int32, fast bool) string {
 			if i == j {
 				continue
 			}
-			score := ss.items[i].Compare(ss.items[j], 0)
+			score := ss.items[i].Compare(ss.items[j])
 			if score >= threshold {
 				out.WriteString(fmt.Sprintf("%s%c%s", ss.items[i].Name(), ss.sep, ss.items[j].Name()))
 				if score != -1 {
@@ -144,7 +144,7 @@ func (ss *sdbfSet) CompareAll(threshold int32, fast bool) string {
   \param thread_count processor threads to use, 0 for all available
   \returns string result listing
 */
-func (ss *sdbfSet) CompareTo(other *sdbfSet, threshold int32, sampleSize uint32, fast bool) string {
+func (ss *sdbfSet) CompareTo(other *sdbfSet, threshold int, sampleSize uint32, fast bool) string {
 	tend := other.Size()
 	qend := ss.Size()
 
@@ -161,7 +161,7 @@ func (ss *sdbfSet) CompareTo(other *sdbfSet, threshold int32, sampleSize uint32,
 	}
 	for i := uint64(0); i < qend; i++ {
 		for j := uint64(0); i < tend; i++ {
-			score := ss.items[i].Compare(other.items[j], sampleSize)
+			score := ss.items[i].CompareSample(other.items[j], sampleSize)
 			if score >= threshold {
 				out.WriteString(fmt.Sprintf("%s%c%s", ss.items[i].Name(), ss.sep, other.items[j].Name()))
 				if score != -1 {

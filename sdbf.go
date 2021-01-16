@@ -7,38 +7,48 @@ import (
 	"strings"
 )
 
-type Sdbf struct {
-	Hamming              []uint16 // hamming weight for each BF
-	buffer               []uint8  // beginning of the BF cluster
-	maxElem              uint32   // max number of elements per filter (n)
-	bigFilters           []*BloomFilter
-	hashName             string   // name (usually, source file)
-	bfCount              uint32   // number of BFs
-	bfSize               uint32   // bf size in bytes (==m/8)
-	lastCount            uint32   // actual number of elements in last filter (n_last); ZERO means look at elemCounts value
-	elemCounts           []uint16 // individual elements counts for each BF (used in dd mode)
-	ddBlockSize          uint32   // size of the base block in dd mode
-	origFileSize         uint64   // size of the original file
+type Sdbf interface {
+	Name() string
+	Size() uint64
+	InputSize() uint64
+	Compare(other Sdbf) int
+	CompareSample(other Sdbf, sample uint32) int
+	String() string
+	GetIndex() BloomFilter
+	Fast()
+}
+
+type sdbf struct {
+	hamming              []uint16      // hamming weight for each buffer
+	buffer               []uint8       // beginning of the buffer cluster
+	maxElem              uint32        // max number of elements per filter (n)
+	bigFilters           []BloomFilter // new style filters. Now seems to be not very useful
+	hashName             string        // name (usually, source file)
+	bfCount              uint32        // number of BFs
+	bfSize               uint32        // bf size in bytes (==m/8)
+	lastCount            uint32        // actual number of elements in last filter (n_last); ZERO means look at elemCounts value
+	elemCounts           []uint16      // individual elements counts for each buffer (used in dd mode)
+	ddBlockSize          uint32        // size of the base block in dd mode
+	origFileSize         uint64        // size of the original file
 	fastMode             bool
-	index                *BloomFilter
-	searchIndexes        []*BloomFilter
+	index                BloomFilter
+	searchIndexes        []BloomFilter
 	searchIndexesResults [][]uint32
 }
 
-func createSdbf(buffer []uint8, ddBlockSize uint32, initialIndex *BloomFilter, searchIndexes []*BloomFilter,
-	name string) *Sdbf {
-	sd := &Sdbf{
+func createSdbf(buffer []uint8, ddBlockSize uint32, initialIndex BloomFilter, searchIndexes []BloomFilter,
+	name string) *sdbf {
+	sd := &sdbf{
 		hashName:      name,
 		bfSize:        BfSize,
 		bfCount:       1,
-		bigFilters:    make([]*BloomFilter, 0),
+		bigFilters:    make([]BloomFilter, 0),
 		index:         initialIndex,
 		searchIndexes: searchIndexes,
 	}
 	if sd.index == nil {
 		sd.index = NewSimpleBloomFilter()
 	}
-	// trying for m/n = 8
 	if bf, err := NewBloomFilter(bigFilter, 5, bigFilterElem); err != nil {
 		panic(err)
 	} else {
@@ -59,7 +69,7 @@ func createSdbf(buffer []uint8, ddBlockSize uint32, initialIndex *BloomFilter, s
 		sd.ddBlockSize = ddBlockSize
 		sd.buffer = make([]uint8, ddBlockCnt*uint64(BfSize))
 		sd.elemCounts = make([]uint16, ddBlockCnt)
-		sd.genBlockSdbfMt(buffer, uint64(ddBlockSize))
+		sd.genBlockSdbfMt(buffer)
 	}
 	sd.computeHamming()
 
@@ -69,7 +79,7 @@ func createSdbf(buffer []uint8, ddBlockSize uint32, initialIndex *BloomFilter, s
 /**
   Returns the name of the file or data this sdbf represents.
 */
-func (sd *Sdbf) Name() string {
+func (sd *sdbf) Name() string {
 	return sd.hashName
 }
 
@@ -77,7 +87,7 @@ func (sd *Sdbf) Name() string {
   Returns the size of the hash data for this sdbf
   \returns uint64_t length value
 */
-func (sd *Sdbf) Size() uint64 {
+func (sd *sdbf) Size() uint64 {
 	return uint64(sd.bfSize) * uint64(sd.bfCount)
 }
 
@@ -85,19 +95,23 @@ func (sd *Sdbf) Size() uint64 {
   Returns the size of the data that the hash was generated from.
   \returns uint64_t length value
 */
-func (sd *Sdbf) InputSize() uint64 {
+func (sd *sdbf) InputSize() uint64 {
 	return sd.origFileSize
 }
 
-func (sd *Sdbf) Compare(other *Sdbf, sample uint32) int32 {
-	return int32(sd.sdbfScore(sd, other, sample))
+func (sd *sdbf) Compare(other Sdbf) int {
+	return sd.CompareSample(other, 0)
+}
+
+func (sd *sdbf) CompareSample(other Sdbf, sample uint32) int {
+	return sd.sdbfScore(sd, other.(*sdbf), sample)
 }
 
 /**
   Encode this sdbf and return it as a string.
   \returns std::string containing sdbf suitable for display or writing to file
 */
-func (sd *Sdbf) String() string {
+func (sd *sdbf) String() string {
 	var sb strings.Builder
 	if sd.elemCounts == nil {
 		sb.WriteString(fmt.Sprintf("%s:%02d:", magicStream, sdbfVersion))
@@ -129,34 +143,34 @@ func (sd *Sdbf) String() string {
 	return sb.String()
 }
 
-func (sd *Sdbf) GetIndex() *BloomFilter {
+func (sd *sdbf) GetIndex() BloomFilter {
 	return sd.index
 }
 
-func (sd *Sdbf) CloneFilter(position uint32) []uint8 {
-	if position < sd.bfCount {
-		filter := make([]uint8, sd.bfSize)
-		copy(filter, sd.buffer[position*sd.bfSize:position*sd.bfSize+sd.bfSize])
-		return filter
-	}
-	return nil
+func (sd *sdbf) FilterCount() uint32 {
+	return sd.bfCount
 }
 
 /**
- * Pre-compute Hamming weights for each BF and adds them to the SDBF descriptor.
- */
-func (sd *Sdbf) computeHamming() int {
-	sd.Hamming = make([]uint16, sd.bfCount)
+  Temporary destructive fast filter comparison.
+*/
+func (sd *sdbf) Fast() {
+	// for each filter
 	for i := uint32(0); i < sd.bfCount; i++ {
-		sd.Hamming[i] = uint16(popcount.CountBytes(sd.buffer[sd.bfSize*i : sd.bfSize*(i+1)]))
+		data := sd.cloneFilter(i)
+		tmp := newBloomFilterFromExistingData(data, int(sd.getElemCount(uint64(i))))
+		tmp.fold(2)
+		tmp.computeHamming()
+		sd.hamming[i] = uint16(tmp.hamming)
+		copy(sd.buffer[i*sd.bfSize:i*sd.bfSize+sd.bfSize], tmp.buffer)
 	}
-	return 0
+	sd.fastMode = true
 }
 
 /**
   get element count for comparisons
 */
-func (sd *Sdbf) GetElemCount(index uint64) int32 {
+func (sd *sdbf) getElemCount(index uint64) int32 {
 	var ret uint32
 	if sd.elemCounts == nil {
 		if index < uint64(sd.bfCount)-1 {
@@ -171,22 +185,22 @@ func (sd *Sdbf) GetElemCount(index uint64) int32 {
 	return int32(ret)
 }
 
-func (sd *Sdbf) FilterCount() uint32 {
-	return sd.bfCount
+/**
+ * Pre-compute hamming weights for each buffer and adds them to the SDBF descriptor.
+ */
+func (sd *sdbf) computeHamming() int {
+	sd.hamming = make([]uint16, sd.bfCount)
+	for i := uint32(0); i < sd.bfCount; i++ {
+		sd.hamming[i] = uint16(popcount.CountBytes(sd.buffer[sd.bfSize*i : sd.bfSize*(i+1)]))
+	}
+	return 0
 }
 
-/**
-  Temporary destructive fast filter comparison.
-*/
-func (sd *Sdbf) Fast() {
-	// for each filter
-	for i := uint32(0); i < sd.bfCount; i++ {
-		data := sd.CloneFilter(i)
-		tmp := NewBloomFilterFromExistingData(data, int(sd.GetElemCount(uint64(i))), 0)
-		tmp.Fold(2)
-		tmp.ComputeHamming()
-		sd.Hamming[i] = uint16(tmp.Hamminglg)
-		copy(sd.buffer[i*sd.bfSize:i*sd.bfSize+sd.bfSize], tmp.BF)
+func (sd *sdbf) cloneFilter(position uint32) []uint8 {
+	if position < sd.bfCount {
+		filter := make([]uint8, sd.bfSize)
+		copy(filter, sd.buffer[position*sd.bfSize:position*sd.bfSize+sd.bfSize])
+		return filter
 	}
-	sd.fastMode = true
+	return nil
 }

@@ -2,14 +2,14 @@ package sdhash
 
 import "math"
 
-const (
-	EntrWinSize = 64
-	BfSize      = 256
-	BlockSize   = 4 * kB
-	PopWinSize  = 64
-	MaxElem     = 160
-	MaxElemDd   = 192
-	Threshold   = 16
+var (
+	BfSize      uint32 = 256
+	PopWinSize  uint32 = 64
+	MaxElem     uint32 = 160
+	MaxElemDd   uint32 = 192
+	Threshold   uint32 = 16
+	BlockSize          = 4 * kB
+	EntrWinSize        = 64
 )
 
 const (
@@ -28,9 +28,7 @@ const (
 	sdbfVersion = 3
 	magicDD     = "sdbf-dd"
 
-	fpThreshold = 4
-
-	defaultMask = 0x7FF
+	defaultMask      = 0x7FF
 	defaultHashCount = 5
 )
 
