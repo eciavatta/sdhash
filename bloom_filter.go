@@ -271,59 +271,50 @@ func (bf *bloomFilter) serialize() (header string, buf []byte, err error) {
 	return header, buf[:bf.compSize], err
 }
 
-func (bf *bloomFilter) deserialize(rd io.Reader) (uint64, error) {
+func (bf *bloomFilter) deserialize(rd io.Reader) (bfSize uint64, err error) {
 	r := bufio.NewReader(rd)
-	var bfSize uint64
-	var err error
+	var bfSizeStr, bfElemCountStr, hashCountStr, bitMaskStr, compSizeStr string
+	var bfElemCount, hashCount, bitMask, compSize uint64
 	if _, err := r.ReadBytes(':'); err != nil { // discard headerbit
 		return 0, errors.New("failed to read headerbit")
 	}
-	if bfSizeStr, err := r.ReadString(':'); err != nil {
+	if bfSizeStr, err = r.ReadString(':'); err != nil {
 		return 0, errors.New("failed to read bfSize")
-	} else {
-		if bfSize, err = strconv.ParseUint(bfSizeStr[:len(bfSizeStr)-1], 10, 64); err != nil {
-			return 0, errors.New("failed to parse bfSize")
-		}
 	}
-	if bfElemCountStr, err := r.ReadString(':'); err != nil {
+	if bfSize, err = strconv.ParseUint(bfSizeStr[:len(bfSizeStr)-1], 10, 64); err != nil {
+		return 0, errors.New("failed to parse bfSize")
+	}
+	if bfElemCountStr, err = r.ReadString(':'); err != nil {
 		return 0, errors.New("failed to read bfElemCount")
-	} else {
-		var bfElemCount uint64
-		if bfElemCount, err = strconv.ParseUint(bfElemCountStr[:len(bfElemCountStr)-1], 10, 64); err != nil {
-			return 0, errors.New("failed to parse bfElemCount")
-		}
-		bf.bfElemCount = bfElemCount
 	}
-	if hashCountStr, err := r.ReadString(':'); err != nil {
+	if bfElemCount, err = strconv.ParseUint(bfElemCountStr[:len(bfElemCountStr)-1], 10, 64); err != nil {
+		return 0, errors.New("failed to parse bfElemCount")
+	}
+	if hashCountStr, err = r.ReadString(':'); err != nil {
 		return 0, errors.New("failed to read hashCount")
-	} else {
-		var hashCount uint64
-		if hashCount, err = strconv.ParseUint(hashCountStr[:len(hashCountStr)-1], 10, 16); err != nil {
-			return 0, errors.New("failed to parse hashCount")
-		}
-		bf.hashCount = uint16(hashCount)
 	}
-	if bitMaskStr, err := r.ReadString(':'); err != nil {
+	if hashCount, err = strconv.ParseUint(hashCountStr[:len(hashCountStr)-1], 10, 16); err != nil {
+		return 0, errors.New("failed to parse hashCount")
+	}
+	if bitMaskStr, err = r.ReadString(':'); err != nil {
 		return 0, errors.New("failed to read bitMask")
-	} else {
-		var bitMask uint64
-		if bitMask, err = strconv.ParseUint(bitMaskStr[:len(bitMaskStr)-1], 10, 64); err != nil {
-			return 0, errors.New("failed to parse bitMask")
-		}
-		bf.bitMask = bitMask
 	}
-	if compSizeStr, err := r.ReadString(':'); err != nil {
+	if bitMask, err = strconv.ParseUint(bitMaskStr[:len(bitMaskStr)-1], 10, 64); err != nil {
+		return 0, errors.New("failed to parse bitMask")
+	}
+	if compSizeStr, err = r.ReadString(':'); err != nil {
 		return 0, errors.New("failed to read compSize")
-	} else {
-		var compSize uint64
-		if compSize, err = strconv.ParseUint(compSizeStr[:len(compSizeStr)-1], 10, 64); err != nil {
-			return 0, errors.New("failed to parse compSize")
-		}
-		bf.compSize = compSize
+	}
+	if compSize, err = strconv.ParseUint(compSizeStr[:len(compSizeStr)-1], 10, 64); err != nil {
+		return 0, errors.New("failed to parse compSize")
 	}
 	if bf.name, err = r.ReadString('\n'); err != nil {
 		return 0, errors.New("failed to read name")
 	}
+	bf.bfElemCount = bfElemCount
+	bf.hashCount = uint16(hashCount)
+	bf.bitMask = bitMask
+	bf.compSize = compSize
 	bf.name = bf.name[:len(bf.name)-1] // remove ending newline
 
 	return bfSize, nil

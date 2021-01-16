@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"strings"
 	"testing"
 )
 
@@ -77,7 +78,8 @@ func CreateSdbfTest(testName string, blockSize uint32, tmpDir string) func(t *te
 					require.NoError(t1, err)
 
 					sd = factory.WithBlockSize(blockSize * kB).WithName(tc.name).Compute()
-					expected := fmt.Sprintf(string(sdDigest), len(tc.name), tc.name)
+					// remove \r in windows builds
+					expected := strings.ReplaceAll(fmt.Sprintf(string(sdDigest), len(tc.name), tc.name), "\r", "")
 					assert.Equal(t1, expected, sd.String())
 					assert.Equal(t1, tc.compareSelfScore, sd.Compare(sd))
 				} else {

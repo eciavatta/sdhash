@@ -176,9 +176,8 @@ func compareSdbf(inputList []string) error {
 
 		writeCompareResults(results)
 		return nil
-	} else {
-		return errors.New("comparison requires 1 or 2 arguments")
 	}
+	return errors.New("comparison requires 1 or 2 arguments")
 }
 
 func listFilesToHash(inputList []string) (map[string]os.FileInfo, error) {
