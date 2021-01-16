@@ -127,7 +127,7 @@ func (sd *sdbf) generateBlockHash(fileBuffer []uint8, blockNum uint64, chunkScor
 	for i := uint32(0); i < maxOffset-PopWinSize && hashCnt < MaxElemDd; i++ {
 		if uint32(chunkScores[i]) > threshold || (uint32(chunkScores[i]) == threshold && allowed > 0) {
 			sha1Hash := u32sha1(fileBuffer[i : i+PopWinSize])
-			bf := sd.buffer[blockNum*uint64(sd.bfSize):(blockNum+1)*uint64(sd.bfSize)] // buffer to be filled
+			bf := sd.buffer[blockNum*uint64(sd.bfSize) : (blockNum+1)*uint64(sd.bfSize)] // buffer to be filled
 			bitsSet := bfSha1Insert(bf, sha1Hash)
 			if bitsSet == 0 { // Avoid potentially repetitive features
 				continue
@@ -248,7 +248,7 @@ func (sd *sdbf) generateBlockSdbf(fileBuffer []uint8, ) {
 		chunkRanks := make([]uint16, blockSize)
 		chunkScores := make([]uint16, blockSize)
 
-		remBuffer := fileBuffer[blockSize*qt:blockSize*qt+rem]
+		remBuffer := fileBuffer[blockSize*qt : blockSize*qt+rem]
 		sd.generateChunkRanks(remBuffer, chunkRanks)
 		sd.generateChunkScores(chunkRanks, rem, chunkScores, nil)
 		sd.generateBlockHash(remBuffer, qt, chunkScores, uint32(rem), Threshold, int32(sd.maxElem))
@@ -257,7 +257,8 @@ func (sd *sdbf) generateBlockSdbf(fileBuffer []uint8, ) {
 
 // sdbfScore calculates the score between two Sdbf.
 func (sd *sdbf) sdbfScore(sdbf1 *sdbf, sdbf2 *sdbf, sample uint32) int {
-	var maxScore, scoreSum float64 = -1, -1
+	var maxScore float64
+	var scoreSum float64 = -1
 	var bfCount1 uint32
 
 	if sdbf1.hamming == nil {
@@ -307,14 +308,15 @@ func (sd *sdbf) sdbfScore(sdbf1 *sdbf, sdbf2 *sdbf, sample uint32) int {
 
 	if scoreSum < 0 {
 		return -1
-	} else {
-		return int(math.Round(100.0 * scoreSum / float64(denominator)))
 	}
+
+	return int(math.Round(100.0 * scoreSum / float64(denominator)))
 }
 
 // sdbfMaxScore calculates the maximum match (0-100) of a single block.
 func (sd *sdbf) sdbfMaxScore(refSdbf *sdbf, refIndex uint32, targetSdbf *sdbf) float64 {
-	var score, maxScore float64 = -1, -1
+	var score float64
+	var maxScore float64 = -1
 	bfSize := refSdbf.bfSize
 
 	s1 := refSdbf.getElemCount(uint64(refIndex))

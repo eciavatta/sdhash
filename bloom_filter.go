@@ -91,13 +91,13 @@ func NewBloomFilterFromString(filter string) (BloomFilter, error) {
 		return nil, errors.New("failed to read raw bf")
 	}
 
-	if decodedBf, err := base64.StdEncoding.DecodeString(rawBf); err != nil {
+	var decodedBf []byte
+	if decodedBf, err = base64.StdEncoding.DecodeString(rawBf); err != nil {
 		return nil, errors.New("failed to decode raw bf")
-	} else {
-		bf.buffer = make([]uint8, bfSize)
-		if n, err := lz4.UncompressBlock(decodedBf, bf.buffer); err != nil || uint64(n) != bfSize {
-			return nil, err
-		}
+	}
+	bf.buffer = make([]uint8, bfSize)
+	if n, err := lz4.UncompressBlock(decodedBf, bf.buffer); err != nil || uint64(n) != bfSize {
+		return nil, err
 	}
 	bf.computeHamming()
 
@@ -167,18 +167,20 @@ func (bf *bloomFilter) WriteToFile(filename string) error {
 		_ = f.Close()
 	}()
 
-	if header, buf, err := bf.serialize(); err != nil {
+	var header string
+	var buf []byte
+	if header, buf, err = bf.serialize(); err != nil {
 		return err
-	} else {
-		if _, err = f.WriteString(header); err != nil {
-			return err
-		}
+	}
 
-		if n, err := f.Write(buf); err != nil {
-			return err
-		} else if uint64(n) != bf.compSize {
-			return errors.New("failed to compress bloom filter")
-		}
+	if _, err = f.WriteString(header); err != nil {
+		return err
+	}
+
+	if n, err := f.Write(buf); err != nil {
+		return err
+	} else if uint64(n) != bf.compSize {
+		return errors.New("failed to compress bloom filter")
 	}
 
 	return nil
@@ -186,11 +188,13 @@ func (bf *bloomFilter) WriteToFile(filename string) error {
 
 // String returns the serialized representation of the BloomFilter.
 func (bf *bloomFilter) String() string {
-	if header, buf, err := bf.serialize(); err != nil {
+	var header string
+	var buf []byte
+	var err error
+	if header, buf, err = bf.serialize(); err != nil {
 		return err.Error()
-	} else {
-		return header + base64.StdEncoding.EncodeToString(buf) + "\n"
 	}
+	return header + base64.StdEncoding.EncodeToString(buf) + "\n"
 }
 
 func (bf *bloomFilter) fold(times uint32) {
@@ -247,26 +251,24 @@ func (bf *bloomFilter) queryAndSet(sha1 []uint32, modeSet bool) bool {
 		if bitCount < bf.hashCount {
 			bf.bfElemCount++
 			return true
-		} else {
-			return false
 		}
-	} else {
-		return bitCount == bf.hashCount
+		return false
 	}
+	return bitCount == bf.hashCount
 }
 
-func (bf *bloomFilter) serialize() (string, []byte, error) {
-	buf := make([]uint8, 160*mB)
-	if n, err := lz4.CompressBlock(bf.buffer, buf, nil); err != nil {
+func (bf *bloomFilter) serialize() (header string, buf []byte, err error) {
+	buf = make([]uint8, 160*mB)
+	var n int
+	if n, err = lz4.CompressBlock(bf.buffer, buf, nil); err != nil {
 		return "", nil, err
-	} else {
-		bf.compSize = uint64(n)
 	}
+	bf.compSize = uint64(n)
 
-	header := fmt.Sprintf("sdbf-idx:%v:%v:%v:%v:%v:%s\n", len(bf.buffer), bf.bfElemCount, bf.hashCount,
+	header = fmt.Sprintf("sdbf-idx:%v:%v:%v:%v:%v:%s\n", len(bf.buffer), bf.bfElemCount, bf.hashCount,
 		bf.bitMask, bf.compSize, bf.name)
 
-	return header, buf[:bf.compSize], nil
+	return header, buf[:bf.compSize], err
 }
 
 func (bf *bloomFilter) deserialize(rd io.Reader) (uint64, error) {
@@ -286,38 +288,38 @@ func (bf *bloomFilter) deserialize(rd io.Reader) (uint64, error) {
 	if bfElemCountStr, err := r.ReadString(':'); err != nil {
 		return 0, errors.New("failed to read bfElemCount")
 	} else {
-		if bfElemCount, err := strconv.ParseUint(bfElemCountStr[:len(bfElemCountStr)-1], 10, 64); err != nil {
+		var bfElemCount uint64
+		if bfElemCount, err = strconv.ParseUint(bfElemCountStr[:len(bfElemCountStr)-1], 10, 64); err != nil {
 			return 0, errors.New("failed to parse bfElemCount")
-		} else {
-			bf.bfElemCount = bfElemCount
 		}
+		bf.bfElemCount = bfElemCount
 	}
 	if hashCountStr, err := r.ReadString(':'); err != nil {
 		return 0, errors.New("failed to read hashCount")
 	} else {
-		if hashCount, err := strconv.ParseUint(hashCountStr[:len(hashCountStr)-1], 10, 16); err != nil {
+		var hashCount uint64
+		if hashCount, err = strconv.ParseUint(hashCountStr[:len(hashCountStr)-1], 10, 16); err != nil {
 			return 0, errors.New("failed to parse hashCount")
-		} else {
-			bf.hashCount = uint16(hashCount)
 		}
+		bf.hashCount = uint16(hashCount)
 	}
 	if bitMaskStr, err := r.ReadString(':'); err != nil {
 		return 0, errors.New("failed to read bitMask")
 	} else {
-		if bitMask, err := strconv.ParseUint(bitMaskStr[:len(bitMaskStr)-1], 10, 64); err != nil {
+		var bitMask uint64
+		if bitMask, err = strconv.ParseUint(bitMaskStr[:len(bitMaskStr)-1], 10, 64); err != nil {
 			return 0, errors.New("failed to parse bitMask")
-		} else {
-			bf.bitMask = bitMask
 		}
+		bf.bitMask = bitMask
 	}
 	if compSizeStr, err := r.ReadString(':'); err != nil {
 		return 0, errors.New("failed to read compSize")
 	} else {
-		if compSize, err := strconv.ParseUint(compSizeStr[:len(compSizeStr)-1], 10, 64); err != nil {
+		var compSize uint64
+		if compSize, err = strconv.ParseUint(compSizeStr[:len(compSizeStr)-1], 10, 64); err != nil {
 			return 0, errors.New("failed to parse compSize")
-		} else {
-			bf.compSize = compSize
 		}
+		bf.compSize = compSize
 	}
 	if bf.name, err = r.ReadString('\n'); err != nil {
 		return 0, errors.New("failed to read name")

@@ -91,7 +91,7 @@ func (ss *sdbfSet) String() string {
 
 /**
   Change comparison output separator
-  \param sep charactor separator for output
+  \param sep character separator for output
 */
 func (ss *sdbfSet) SetSeparator(sep byte) {
 	ss.sep = sep

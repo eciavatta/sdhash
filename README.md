@@ -14,7 +14,7 @@ sdhash is able to compare the similarity digests to produce a score.
 A score close to 0 means that two file are very different, a score equals to 100 means that two file are equal.
 
 ## Features
-- calculate similarity digest of many files in a short time
+- calculate similarity digests of many files in a short time
 - compare a large amount of digests using precalculated indexes
 - the comparison can also be made during the digest process
 - same results of original sdhash with similar performance, but entirely rewritten in go language
@@ -49,7 +49,7 @@ func main() {
 	
 	fmt.Println(sdbfA.String())
 	fmt.Println(sdbfB.String())
-	fmt.Println(sdbfA.Compare(sdbfB, 0))	
+	fmt.Println(sdbfA.Compare(sdbfB))	
 }
 ```
 

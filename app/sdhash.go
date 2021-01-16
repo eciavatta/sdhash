@@ -127,7 +127,7 @@ func loadIndexSearchFiles(sdbfFiles map[string]*sdbfSet) error {
 	if stat, err := os.Stat(*indexSearch); err != nil {
 		return err
 	} else if !stat.IsDir() {
-		return errors.New(fmt.Sprintf("%s must be a directory", *indexSearch))
+		return fmt.Errorf("%s must be a directory", *indexSearch)
 	}
 
 	if infos, err := ioutil.ReadDir(*indexSearch); err == nil {

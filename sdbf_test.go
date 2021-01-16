@@ -17,7 +17,6 @@ type testCase struct {
 	length           int64
 	expectedErr      string
 	fileName         string
-	buffer           []byte
 	compareSelfScore int
 	onlyStreamMode   bool
 }
@@ -26,16 +25,16 @@ var testCases = []testCase{
 	{
 		name:        "zero-length",
 		length:      0,
-		expectedErr: "the length of buffer must be greater than 512",
+		expectedErr: "%s is too small",
 	},
 	{
 		name:        "small",
 		length:      256,
-		expectedErr: "the length of buffer must be greater than 512",
+		expectedErr: "%s is too small",
 	},
 	{
-		name:   "min-size",
-		length: 512,
+		name:             "min-size",
+		length:           512,
 		compareSelfScore: 0, // maybe too small?
 	},
 	{
@@ -55,7 +54,7 @@ var testCases = []testCase{
 	},
 	{
 		name:             "chunk-sized",
-		length:           32*mB,
+		length:           32 * mB,
 		compareSelfScore: 100,
 		onlyStreamMode:   true,
 	},
@@ -69,16 +68,16 @@ func CreateSdbfTest(testName string, blockSize uint32, tmpDir string) func(t *te
 			}
 
 			t.Run(tc.name, func(t1 *testing.T) {
-				factory, err := CreateSdbfFromBytes(tc.buffer)
+				factory, err := CreateSdbfFromFilename(tc.fileName)
 				var sd Sdbf
 				if tc.expectedErr != "" && err != nil {
-					assert.EqualError(t1, err, tc.expectedErr)
+					assert.EqualError(t1, err, fmt.Sprintf(tc.expectedErr, tc.fileName))
 				} else if err == nil {
 					sdDigest, err := ioutil.ReadFile(fmt.Sprintf("testdata/%s/%s.sdbf", testName, tc.name))
 					require.NoError(t1, err)
 
-					sd = factory.WithBlockSize(blockSize * kB).WithName(tc.fileName).Compute()
-					expected := fmt.Sprintf(string(sdDigest), len(tc.fileName), tc.fileName)
+					sd = factory.WithBlockSize(blockSize * kB).WithName(tc.name).Compute()
+					expected := fmt.Sprintf(string(sdDigest), len(tc.name), tc.name)
 					assert.Equal(t1, expected, sd.String())
 					assert.Equal(t1, tc.compareSelfScore, sd.Compare(sd))
 				} else {
@@ -129,7 +128,6 @@ func TestSdbfSuite(t *testing.T) {
 		fileName := path.Join(tmpDir, tc.name)
 		require.NoError(t, ioutil.WriteFile(fileName, buf, 0664))
 		testCases[i].fileName = fileName
-		testCases[i].buffer = buf
 	}
 
 	t.Run("SdbfStream", CreateSdbfTest("stream", 0, tmpDir))

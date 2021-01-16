@@ -1,7 +1,6 @@
 package sdhash
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -33,10 +32,10 @@ func CreateSdbfFromFilename(filename string) (SdbfFactory, error) {
 		return nil, err
 	}
 	if !info.Mode().IsRegular() {
-		return nil, errors.New(fmt.Sprintf("%s is not a regular file", filename))
+		return nil, fmt.Errorf("%s is not a regular file", filename)
 	}
 	if info.Size() < minFileSize {
-		return nil, errors.New(fmt.Sprintf("%s is too small", filename))
+		return nil, fmt.Errorf("%s is too small", filename)
 	}
 	if buffer, err := ioutil.ReadFile(filename); err == nil {
 		if sdbf, err := CreateSdbfFromBytes(buffer); err != nil {
@@ -53,7 +52,7 @@ func CreateSdbfFromFilename(filename string) (SdbfFactory, error) {
 // CreateSdbfFromBytes returns a factory which can produce a Sdbf from a bytes buffer.
 func CreateSdbfFromBytes(buffer []uint8) (SdbfFactory, error) {
 	if len(buffer) < minFileSize {
-		return nil, errors.New(fmt.Sprintf("the length of buffer must be greater than %d", minFileSize))
+		return nil, fmt.Errorf("the length of buffer must be greater than %d", minFileSize)
 	}
 	return &sdbfFactory{
 		buffer: buffer,
@@ -62,11 +61,12 @@ func CreateSdbfFromBytes(buffer []uint8) (SdbfFactory, error) {
 
 // CreateSdbfFromReader returns a factory which can produce a Sdbf from a io.Reader.
 func CreateSdbfFromReader(r io.Reader) (SdbfFactory, error) {
-	if buffer, err := ioutil.ReadAll(r); err == nil {
-		return CreateSdbfFromBytes(buffer)
-	} else {
+	var buffer []byte
+	var err error
+	if buffer, err = ioutil.ReadAll(r); err != nil {
 		return nil, err
 	}
+	return CreateSdbfFromBytes(buffer)
 }
 
 // WithBlockSize sets the block size for the block mode.
