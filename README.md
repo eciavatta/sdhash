@@ -1,5 +1,13 @@
 # sdhash
 
+[![sdhash Actions Status](https://github.com/eciavatta/sdhash/workflows/Test/badge.svg)](https://github.com/eciavatta/sdhash/actions)
+[![codecov](https://codecov.io/gh/eciavatta/sdhash/branch/develop/graph/badge.svg)](https://codecov.io/gh/eciavatta/sdhash)
+[![Go Report Card](https://goreportcard.com/badge/github.com/eciavatta/sdhash)](https://goreportcard.com/report/github.com/eciavatta/sdhash)
+[![GoDoc](https://pkg.go.dev/badge/github.com/eciavatta/sdhash?status.svg)](https://pkg.go.dev/github.com/eciavatta/sdhash?tab=doc)
+[![Release](https://img.shields.io/github/release/eciavatta/sdhash.svg?style=flat-square)](https://github.com/eciavatta/sdhash/releases)
+![Language](https://img.shields.io/badge/language-go-blue)
+![License](https://img.shields.io/github/license/eciavatta/sdhash)
+
 sdhash is a tool that processes binary data and produces similarity digests using bloom filters.
 Two binary files with common parts produces two similar digests.
 sdhash is able to compare the similarity digests to produce a score.
