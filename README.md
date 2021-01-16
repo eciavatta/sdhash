@@ -1,4 +1,4 @@
-# [WIP] sdhash
+# sdhash
 
 sdhash is a tool that processes binary data and produces similarity digests using bloom filters.
 Two binary files with common parts produces two similar digests.

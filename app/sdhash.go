@@ -13,7 +13,8 @@ import (
 	"strings"
 )
 
-const Version = "sdhash 4.0, the similarity hashing tool which use bloom filters"
+var Version string
+var BuildDate string
 
 const (
 	KB = 1024

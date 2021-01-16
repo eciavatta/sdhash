@@ -19,6 +19,7 @@ type testCase struct {
 	fileName         string
 	buffer           []byte
 	compareSelfScore int
+	onlyStreamMode   bool
 }
 
 var testCases = []testCase{
@@ -33,8 +34,9 @@ var testCases = []testCase{
 		expectedErr: "the length of buffer must be greater than 512",
 	},
 	{
-		name:   "min-size-limit",
+		name:   "min-size",
 		length: 512,
+		compareSelfScore: 0, // maybe too small?
 	},
 	{
 		name:             "block-sized",
@@ -52,25 +54,25 @@ var testCases = []testCase{
 		compareSelfScore: 100,
 	},
 	{
-		name:             "large",
-		length:           mB,
+		name:             "chunk-sized",
+		length:           32*mB,
 		compareSelfScore: 100,
+		onlyStreamMode:   true,
 	},
-	//{
-	//	name: "very-large",
-	//	length: 32*mB,
-	//	compareSelfScore: 100,
-	//},
 }
 
 func CreateSdbfTest(testName string, blockSize uint32, tmpDir string) func(t *testing.T) {
 	return func(t *testing.T) {
 		for _, tc := range testCases {
+			if tc.onlyStreamMode && testName != "stream" {
+				continue
+			}
+
 			t.Run(tc.name, func(t1 *testing.T) {
 				factory, err := CreateSdbfFromBytes(tc.buffer)
 				var sd Sdbf
 				if tc.expectedErr != "" && err != nil {
-					assert.EqualError(t1, err, tc.expectedErr, tc.fileName)
+					assert.EqualError(t1, err, tc.expectedErr)
 				} else if err == nil {
 					sdDigest, err := ioutil.ReadFile(fmt.Sprintf("testdata/%s/%s.sdbf", testName, tc.name))
 					require.NoError(t1, err)
@@ -113,9 +115,7 @@ func CreateSdbfTest(testName string, blockSize uint32, tmpDir string) func(t *te
 	}
 }
 
-func TestGenericSdbf(t *testing.T) {
-	require.DirExists(t, "testdata")
-
+func TestSdbfSuite(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "sdhash-test")
 	require.NoError(t, err)
 
@@ -132,9 +132,9 @@ func TestGenericSdbf(t *testing.T) {
 		testCases[i].buffer = buf
 	}
 
-	t.Run("sdbf-stream", CreateSdbfTest("stream", 0, tmpDir))
-	t.Run("sdbf-block1KB", CreateSdbfTest("block1kb", 1, tmpDir))
-	t.Run("sdbf-block16KB", CreateSdbfTest("block16kb", 16, tmpDir))
+	t.Run("SdbfStream", CreateSdbfTest("stream", 0, tmpDir))
+	t.Run("SdbfBlock1KB", CreateSdbfTest("block1kb", 1, tmpDir))
+	t.Run("SdbfBlock16KB", CreateSdbfTest("block16kb", 16, tmpDir))
 
 	require.NoError(t, os.RemoveAll(tmpDir))
 }

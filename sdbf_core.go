@@ -111,14 +111,14 @@ func (sd *sdbf) generateChunkHash(fileBuffer []uint8, chunkPos uint64, chunkScor
 }
 
 // generateBlockHash generate SHA1 hashes and add them to the Sdbf in block-aligned mode.
-func (sd *sdbf) generateBlockHash(fileBuffer []uint8, blockNum uint64, chunkScores []uint16,
-	blockSize uint64, rem uint32, threshold uint32, allowed int32) {
+func (sd *sdbf) generateBlockHash(fileBuffer []uint8, blockNum uint64, chunkScores []uint16, rem uint32,
+	threshold uint32, allowed int32) {
 	var hashCnt, maxOffset, numIndexMatches uint32
 
 	if rem > 0 {
 		maxOffset = rem
 	} else {
-		maxOffset = uint32(blockSize)
+		maxOffset = sd.ddBlockSize
 	}
 	if sd.searchIndexes != nil {
 		numIndexMatches = uint32(len(sd.searchIndexes))
@@ -126,15 +126,16 @@ func (sd *sdbf) generateBlockHash(fileBuffer []uint8, blockNum uint64, chunkScor
 	match := make([]uint32, numIndexMatches)
 	for i := uint32(0); i < maxOffset-PopWinSize && hashCnt < MaxElemDd; i++ {
 		if uint32(chunkScores[i]) > threshold || (uint32(chunkScores[i]) == threshold && allowed > 0) {
-			data := fileBuffer[blockNum*blockSize:] // Start of data
-			sha1Hash := u32sha1(data[i : i+PopWinSize])
-			bf := sd.buffer[blockNum*uint64(sd.bfSize):] // buffer to be filled
+			sha1Hash := u32sha1(fileBuffer[i : i+PopWinSize])
+			bf := sd.buffer[blockNum*uint64(sd.bfSize):(blockNum+1)*uint64(sd.bfSize)] // buffer to be filled
 			bitsSet := bfSha1Insert(bf, sha1Hash)
 			if bitsSet == 0 { // Avoid potentially repetitive features
 				continue
 			}
 			if sd.index != nil {
+				sd.indexMutex.Lock()
 				sd.index.insertSha1(sha1Hash[:])
+				sd.indexMutex.Unlock()
 			}
 
 			if sd.searchIndexes != nil {
@@ -199,13 +200,14 @@ func (sd *sdbf) generateChunkSdbf(fileBuffer []uint8, chunkSize uint64) {
 }
 
 // generateSingleBlockSdbf is the worker for multi goroutine block hash generation.
-func (sd *sdbf) generateSingleBlockSdbf(index uint64, blockSize uint64, buffer []uint8, ch chan bool) {
+func (sd *sdbf) generateSingleBlockSdbf(fileBuffer []uint8, blockNum uint64, ch chan bool) {
+	blockSize := uint64(sd.ddBlockSize)
 	var sum, allowed uint32
 	var scoreHistogram [66]int32
 	chunkRanks := make([]uint16, blockSize)
 	chunkScores := make([]uint16, blockSize)
 
-	sd.generateChunkRanks(buffer[blockSize*index:blockSize*(index+1)], chunkRanks)
+	sd.generateChunkRanks(fileBuffer, chunkRanks)
 	sd.generateChunkScores(chunkRanks, blockSize, chunkScores, scoreHistogram[:])
 	var k uint32
 	for k = 65; k >= Threshold; k-- {
@@ -215,7 +217,7 @@ func (sd *sdbf) generateSingleBlockSdbf(index uint64, blockSize uint64, buffer [
 		sum += uint32(scoreHistogram[k])
 	}
 	allowed = MaxElemDd - sum
-	sd.generateBlockHash(buffer, index, chunkScores, blockSize, 0, k, int32(allowed))
+	sd.generateBlockHash(fileBuffer, blockNum, chunkScores, 0, k, int32(allowed))
 
 	ch <- true
 }
@@ -236,7 +238,7 @@ func (sd *sdbf) generateBlockSdbf(fileBuffer []uint8, ) {
 
 	ch := make(chan bool, qt)
 	for i := uint64(0); i < qt; i++ {
-		go sd.generateSingleBlockSdbf(i, blockSize, fileBuffer, ch)
+		go sd.generateSingleBlockSdbf(fileBuffer[blockSize*i:blockSize*(i+1)], i, ch)
 	}
 	for i := uint64(0); i < qt; i++ {
 		<-ch
@@ -246,9 +248,10 @@ func (sd *sdbf) generateBlockSdbf(fileBuffer []uint8, ) {
 		chunkRanks := make([]uint16, blockSize)
 		chunkScores := make([]uint16, blockSize)
 
-		sd.generateChunkRanks(fileBuffer[blockSize*qt:blockSize*qt+rem], chunkRanks)
+		remBuffer := fileBuffer[blockSize*qt:blockSize*qt+rem]
+		sd.generateChunkRanks(remBuffer, chunkRanks)
 		sd.generateChunkScores(chunkRanks, rem, chunkScores, nil)
-		sd.generateBlockHash(fileBuffer, qt, chunkScores, blockSize, uint32(rem), Threshold, int32(sd.maxElem))
+		sd.generateBlockHash(remBuffer, qt, chunkScores, uint32(rem), Threshold, int32(sd.maxElem))
 	}
 }
 

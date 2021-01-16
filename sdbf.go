@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/tmthrgd/go-popcount"
 	"strings"
+	"sync"
 )
 
 type Sdbf interface {
@@ -34,6 +35,7 @@ type sdbf struct {
 	index                BloomFilter
 	searchIndexes        []BloomFilter
 	searchIndexesResults [][]uint32
+	indexMutex           sync.Mutex
 }
 
 func createSdbf(buffer []uint8, ddBlockSize uint32, initialIndex BloomFilter, searchIndexes []BloomFilter,
