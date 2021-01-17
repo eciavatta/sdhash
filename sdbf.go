@@ -1,490 +1,349 @@
 package sdhash
 
 import (
-	"encoding/binary"
+	"bufio"
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"github.com/tmthrgd/go-popcount"
+	"io"
+	"strconv"
 	"strings"
+	"sync"
 )
 
-type indexInfo struct {
-	index       *bloomFilter
-	indexList   []*bloomFilter
-	setList     []*sdbfSet
-	searchDeep  bool
-	searchFirst bool
-	basename    bool
+// Sdbf represent the similarity digest of a file and can be compared for similarity to others Sdbf.
+type Sdbf interface {
+
+	// Name of the of the file or data this Sdbf represents.
+	Name() string
+
+	// Size of the hash data for this Sdbf.
+	Size() uint64
+
+	// InputSize of the data that the hash was generated from.
+	InputSize() uint64
+
+	// FilterCount returns the number of bloom filters count.
+	FilterCount() uint32
+
+	// Compare two Sdbf and provide a similarity score ranges between 0 and 100.
+	// A score of 0 means that the two files are very different, a score of 100 means that the two files are equals.
+	Compare(other Sdbf) int
+
+	// CompareSample compare two Sdbf with sampling and provide a similarity score ranges between 0 and 100.
+	// A score of 0 means that the two files are very different, a score of 100 means that the two files are equals.
+	CompareSample(other Sdbf, sample uint32) int
+
+	// String returns the encoded Sdbf as a string.
+	String() string
+
+	// GetIndex returns the BloomFilter index used during the digesting process.
+	GetIndex() BloomFilter
+
+	// GetSearchIndexesResults returns search indexes results.
+	// The return value is an array of size == len(searchIndexes), and each elements has another array of length bfCount.
+	GetSearchIndexesResults() [][]uint32
+
+	// Fast modify the bloom filter buffer for faster comparison.
+	// Warning: the operation overwrite the original buffer.
+	Fast()
 }
 
 type sdbf struct {
-	Buffer       []uint8  // Beginning of the BF cluster
-	Hamming      []uint16 // Hamming weight for each BF
-	MaxElem      uint32   // Max number of elements per filter (n)
-	BigFilters   []*bloomFilter
-	info         *indexInfo
-	indexResults string
-
-	// from the C structure
-	hashName  string // name (usually, source file)
-	bfCount   uint32 // Number of BFs
-	bfSize    uint32 // BF size in bytes (==m/8)
-	hashCount uint32 // Number of hash functions used (k)
-	mask      uint32 // Bit mask used (must agree with m)
-	lastCount uint32 // Actual number of elements in last filter (n_last);
-	// ZERO means look at elemCounts value
-	elemCounts    []uint16 // Individual elements counts for each BF (used in dd mode)
-	ddBlockSize   uint32   // Size of the base block in dd mode
-	origFileSize  uint64   // size of the original file
-	filenameAlloc bool
-	fastMode      bool
+	hamming              []uint16      // hamming weight for each buffer
+	buffer               []uint8       // beginning of the buffer cluster
+	maxElem              uint32        // max number of elements per filter (n)
+	bigFilters           []BloomFilter // new style filters. Now seems to be not very useful
+	hashName             string        // name (usually, source file)
+	bfCount              uint32        // number of bloom filters
+	bfSize               uint32        // bloom filter size in bytes (==m/8)
+	lastCount            uint32        // actual number of elements in last filter (n_last); ZERO means look at elemCounts value
+	elemCounts           []uint16      // individual elements counts for each buffer (used in dd mode)
+	ddBlockSize          uint32        // size of the base block in dd mode
+	origFileSize         uint64        // size of the original file
+	fastMode             bool          // use fast mode during comparison
+	index                BloomFilter   // bloom filter updated during digest process that can be exported
+	searchIndexes        []BloomFilter // used to search similar bloom filter during digest process; can be nil
+	searchIndexesResults [][]uint32    // results of search indexes; is nil if searchIndexes is nil
+	indexMutex           sync.Mutex    // mutex used while updating index bloom filter
 }
 
-var config = NewSdbfConf(1, FlagOff, MaxElemCount, MaxElemCountDD)
-
-func NewSdbf(filename string, ddBlockSize uint32) (*sdbf, error) {
-	buffer, err := processFile(filename, MinFileSize)
-	if err != nil {
-		return nil, err
-	}
+// ParseSdbfFromString decode a Sdbf from a digest string.
+func ParseSdbfFromString(digest string) (Sdbf, error) {
+	r := bufio.NewReader(strings.NewReader(digest))
+	var err error
 
 	sd := &sdbf{
-		hashName: filename,
-		bfSize: config.BfSize,
-		hashCount: 5,
-		mask: BFClassMask[0],
-		bfCount: 1,
-		BigFilters: make([]*bloomFilter, 0),
-		origFileSize: uint64(len(buffer)),
+		bigFilters: make([]BloomFilter, 0),
+		index:      NewBloomFilter(),
 	}
-	bf, err := NewBloomFilter(BigFilter, 5, BigFilterElem, 0.01)
-	if err != nil {
-		return nil, err
-	}
-	sd.BigFilters = append(sd.BigFilters, bf)
 
-	// todo: continue
-	if ddBlockSize == 0 {
-		sd.MaxElem = config.MaxElem
+	var magic, versionStr, originFileSizeStr, bfSizeStr, maxElemStr, bfCountStr string
+	var bfSize, maxElem, bfCount uint64
+	if magic, err = r.ReadString(':'); err != nil {
+		return nil, errors.New("failed to read magic")
+	}
+	if versionStr, err = r.ReadString(':'); err != nil {
+		return nil, errors.New("failed to read version")
+	}
+	if version, err := strconv.ParseUint(versionStr[:len(versionStr)-1], 10, 64); err != nil {
+		return nil, errors.New("failed to parse version")
+	} else if version > sdbfVersion {
+		return nil, errors.New("invalid sdbf version")
+	}
+	if _, err = r.ReadBytes(':'); err != nil {
+		return nil, errors.New("failed to read hash length")
+	}
+	if sd.hashName, err = r.ReadString(':'); err != nil {
+		return nil, errors.New("failed to read hash name")
+	}
+	if originFileSizeStr, err = r.ReadString(':'); err != nil {
+		return nil, errors.New("failed to read origin file size")
+	}
+	if sd.origFileSize, err = strconv.ParseUint(originFileSizeStr[:len(originFileSizeStr)-1], 10, 64); err != nil {
+		return nil, errors.New("failed to parse origin file size")
+	}
+	if _, err = r.ReadBytes(':'); err != nil {
+		return nil, errors.New("failed to read hash algorithm")
+	}
+	if bfSizeStr, err = r.ReadString(':'); err != nil {
+		return nil, errors.New("failed to read bloom filter size")
+	}
+	if bfSize, err = strconv.ParseUint(bfSizeStr[:len(bfSizeStr)-1], 10, 64); err != nil {
+		return nil, errors.New("failed to parse bloom filter size")
+	}
+	if _, err = r.ReadBytes(':'); err != nil {
+		return nil, errors.New("failed to read hash count")
+	}
+	if _, err = r.ReadBytes(':'); err != nil {
+		return nil, errors.New("failed to read bit mask")
+	}
+	if maxElemStr, err = r.ReadString(':'); err != nil {
+		return nil, errors.New("failed to read max elements count")
+	}
+	if maxElem, err = strconv.ParseUint(maxElemStr[:len(maxElemStr)-1], 10, 64); err != nil {
+		return nil, errors.New("failed to parse max elements count")
+	}
+	if bfCountStr, err = r.ReadString(':'); err != nil {
+		return nil, errors.New("failed to read bloom filter count")
+	}
+	if bfCount, err = strconv.ParseUint(bfCountStr[:len(bfCountStr)-1], 10, 64); err != nil {
+		return nil, errors.New("failed to parse bloom filter count")
+	}
+
+	if magic[:len(magic)-1] == magicStream {
+		var lastCountStr, encodedBuffer string
+		var lastCount uint64
+		if lastCountStr, err = r.ReadString(':'); err != nil {
+			return nil, errors.New("failed to read last count")
+		}
+		if lastCount, err = strconv.ParseUint(lastCountStr[:len(lastCountStr)-1], 10, 64); err != nil {
+			return nil, errors.New("failed to parse last count")
+		}
+		if encodedBuffer, err = r.ReadString('\n'); err != nil && err != io.EOF {
+			return nil, errors.New("failed to read encoded buffer")
+		} else if err == nil {
+			encodedBuffer = encodedBuffer[:len(encodedBuffer)-1] // remove newline char
+		}
+		if sd.buffer, err = base64.StdEncoding.DecodeString(encodedBuffer); err != nil {
+			return nil, errors.New("failed to decode base64 buffer")
+		}
+		sd.lastCount = uint32(lastCount)
+	} else if magic[:len(magic)-1] == magicDD {
+		var ddBlockSizeStr string
+		var ddBlockSize uint64
+		if ddBlockSizeStr, err = r.ReadString(':'); err != nil {
+			return nil, errors.New("failed to read dd block size")
+		}
+		if ddBlockSize, err = strconv.ParseUint(ddBlockSizeStr[:len(ddBlockSizeStr)-1], 10, 64); err != nil {
+			return nil, errors.New("failed to parse dd block size")
+		}
+		sd.elemCounts = make([]uint16, bfCount)
+		sd.buffer = make([]uint8, bfCount*bfSize)
+		for i := uint64(0); i < bfCount; i++ {
+			var elemStr, encodedBuffer string
+			var elem uint64
+			var tmpBuffer []uint8
+			if elemStr, err = r.ReadString(':'); err != nil {
+				return nil, errors.New("failed to read dd elem")
+			}
+			if elem, err = strconv.ParseUint(elemStr[:len(elemStr)-1], 16, 64); err != nil {
+				return nil, errors.New("failed to parse dd block size")
+			}
+			sd.elemCounts[i] = uint16(elem)
+
+			if encodedBuffer, err = r.ReadString(':'); err != nil && err != io.EOF {
+				return nil, errors.New("failed to read encoded dd buffer")
+			}
+			if tmpBuffer, err = base64.StdEncoding.DecodeString(encodedBuffer[:len(encodedBuffer)-1]); err != nil {
+				return nil, errors.New("failed to decode dd base64 buffer")
+			}
+			copy(sd.buffer[i*bfSize:], tmpBuffer)
+		}
+		sd.ddBlockSize = uint32(ddBlockSize)
 	} else {
-		sd.MaxElem = config.MaxElemDd
+		return nil, errors.New("invalid sdbf magic")
 	}
 
-	return nil, nil
+	sd.hashName = sd.hashName[:len(sd.hashName)-1]
+	sd.bfSize = uint32(bfSize)
+	sd.maxElem = uint32(maxElem)
+	sd.bfCount = uint32(bfCount)
+
+	sd.computeHamming()
+
+	return sd, nil
 }
 
-/**
-  Returns the name of the file or data this sdbf represents.
-*/
+// createSdbf create and digest a sdbf file from an initial buffer.
+func createSdbf(buffer []uint8, ddBlockSize uint32, initialIndex BloomFilter, searchIndexes []BloomFilter,
+	name string) *sdbf {
+	sd := &sdbf{
+		hashName:      name,
+		bfSize:        BfSize,
+		bfCount:       1,
+		bigFilters:    make([]BloomFilter, 0),
+		index:         initialIndex,
+		searchIndexes: searchIndexes,
+	}
+	if sd.index == nil {
+		sd.index = NewBloomFilter()
+	}
+	if bf, err := newBloomFilter(bigFilter, 5, bigFilterElem); err != nil {
+		panic(err)
+	} else {
+		sd.bigFilters = append(sd.bigFilters, bf)
+	}
+	fileSize := uint64(len(buffer))
+	sd.origFileSize = fileSize
+	if ddBlockSize == 0 { // stream mode
+		sd.maxElem = MaxElem
+		sd.generateChunkSdbf(buffer, 32*mB)
+	} else { // block mode
+		sd.maxElem = MaxElemDd
+		ddBlockCnt := fileSize / uint64(ddBlockSize)
+		if fileSize%uint64(ddBlockSize) >= MinFileSize {
+			ddBlockCnt++
+		}
+		sd.bfCount = uint32(ddBlockCnt)
+		sd.ddBlockSize = ddBlockSize
+		sd.buffer = make([]uint8, ddBlockCnt*uint64(BfSize))
+		sd.elemCounts = make([]uint16, ddBlockCnt)
+		sd.generateBlockSdbf(buffer)
+	}
+	sd.computeHamming()
+
+	return sd
+}
+
 func (sd *sdbf) Name() string {
 	return sd.hashName
 }
 
-/**
-  Returns the size of the hash data for this sdbf
-  \returns uint64_t length value
-*/
 func (sd *sdbf) Size() uint64 {
 	return uint64(sd.bfSize) * uint64(sd.bfCount)
 }
 
-/**
-  Returns the size of the data that the hash was generated from.
-  \returns uint64_t length value
-*/
 func (sd *sdbf) InputSize() uint64 {
 	return sd.origFileSize
 }
 
-func (sd *sdbf) Compare(other *sdbf, sample uint32) int32 {
-	// todo: skip output
-	return sd.sdbfScore(sd, other, sample)
+func (sd *sdbf) Compare(other Sdbf) int {
+	return sd.CompareSample(other, 0)
 }
 
-func (sd *sdbf) GetIndexResults() string {
-	return sd.indexResults
+func (sd *sdbf) CompareSample(other Sdbf, sample uint32) int {
+	return sd.sdbfScore(sd, other.(*sdbf), sample)
 }
 
-func (sd *sdbf) CloneFilter(position uint32) []uint8 {
+func (sd *sdbf) String() string {
+	var sb strings.Builder
+	if sd.elemCounts == nil {
+		sb.WriteString(fmt.Sprintf("%s:%02d:", magicStream, sdbfVersion))
+		sb.WriteString(fmt.Sprintf("%d:%s:%d:sha1:", len(sd.hashName), sd.hashName, sd.origFileSize))
+		sb.WriteString(fmt.Sprintf("%d:%d:%x:", sd.bfSize, defaultHashCount, defaultMask))
+		sb.WriteString(fmt.Sprintf("%d:%d:%d:", sd.maxElem, sd.bfCount, sd.lastCount))
+		qt, rem := sd.bfCount/6, sd.bfCount%6
+		b64Block := uint64(6 * sd.bfSize)
+		var pos uint64
+		for i := uint32(0); i < qt; i++ {
+			sb.WriteString(base64.StdEncoding.EncodeToString(sd.buffer[pos : pos+b64Block]))
+			pos += b64Block
+		}
+		if rem > 0 {
+			sb.WriteString(base64.StdEncoding.EncodeToString(sd.buffer[pos : pos+uint64(rem*sd.bfSize)]))
+		}
+	} else {
+		sb.WriteString(fmt.Sprintf("%s:%02d:", magicDD, sdbfVersion))
+		sb.WriteString(fmt.Sprintf("%d:%s:%d:sha1:", len(sd.hashName), sd.hashName, sd.origFileSize))
+		sb.WriteString(fmt.Sprintf("%d:%d:%x:", sd.bfSize, defaultHashCount, defaultMask))
+		sb.WriteString(fmt.Sprintf("%d:%d:%d", sd.maxElem, sd.bfCount, sd.ddBlockSize))
+		for i := uint32(0); i < sd.bfCount; i++ {
+			sb.WriteString(fmt.Sprintf(":%02x:", sd.elemCounts[i]))
+			sb.WriteString(base64.StdEncoding.EncodeToString(sd.buffer[i*sd.bfSize : i*sd.bfSize+sd.bfSize]))
+		}
+	}
+	sb.WriteByte('\n')
+
+	return sb.String()
+}
+
+func (sd *sdbf) GetIndex() BloomFilter {
+	return sd.index
+}
+
+func (sd *sdbf) GetSearchIndexesResults() [][]uint32 {
+	return sd.searchIndexesResults
+}
+
+func (sd *sdbf) FilterCount() uint32 {
+	return sd.bfCount
+}
+
+func (sd *sdbf) Fast() {
+	for i := uint32(0); i < sd.bfCount; i++ {
+		data := sd.cloneFilter(i)
+		tmp := newBloomFilterFromExistingData(data, int(sd.getElemCount(uint64(i))))
+		tmp.fold(2)
+		tmp.computeHamming()
+		sd.hamming[i] = uint16(tmp.hamming)
+		copy(sd.buffer[i*sd.bfSize:(i+1)*sd.bfSize], tmp.buffer)
+	}
+	sd.fastMode = true
+}
+
+// getElemCount returns element count for comparisons
+func (sd *sdbf) getElemCount(index uint64) int32 {
+	var ret uint32
+	if sd.elemCounts == nil {
+		if index < uint64(sd.bfCount)-1 {
+			ret = sd.maxElem
+		} else {
+			ret = sd.lastCount
+		}
+	} else {
+		ret = uint32(sd.elemCounts[index])
+	}
+
+	return int32(ret)
+}
+
+// computeHamming pre-compute hamming weights for each buffer and adds them to the Sdbf descriptor.
+func (sd *sdbf) computeHamming() int {
+	sd.hamming = make([]uint16, sd.bfCount)
+	for i := uint32(0); i < sd.bfCount; i++ {
+		sd.hamming[i] = uint16(popcount.CountBytes(sd.buffer[sd.bfSize*i : sd.bfSize*(i+1)]))
+	}
+	return 0
+}
+
+// cloneFilter returns a copy of the buffer of bfSize length at index position.
+func (sd *sdbf) cloneFilter(position uint32) []uint8 {
 	if position < sd.bfCount {
 		filter := make([]uint8, sd.bfSize)
-		copy(filter, sd.Buffer[position*sd.bfSize:position*sd.bfSize + sd.bfSize])
+		copy(filter, sd.buffer[position*sd.bfSize:(position+1)*sd.bfSize])
 		return filter
 	}
 	return nil
 }
-
-/**
- * Pre-compute Hamming weights for each BF and adds them to the SDBF descriptor.
- */
-func (sd *sdbf) computeHamming() int {
-	var pos uint32
-	sd.Hamming = make([]uint16, sd.bfCount)
-	for i := uint32(0); i < sd.bfCount; i++ {
-		for j := 0; j <= BfSize / 2; j++ {
-			sd.Hamming[i] += uint16(bitCount16[binary.BigEndian.Uint16(sd.Buffer[2*pos:2*pos+2])])
-			pos++
-		}
-	}
-	return 0
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/**
- * Generate ranks for a file chunk.
- */
-func (sd *sdbf) genChunkRanks(fileBuffer []uint8, chunkSize uint64, chunkRanks []uint16, carryover uint16) {
-	var offset, entropy uint64
-	ascii := make([]uint8, 256)
-
-	if carryover > 0 {
-		copy(chunkRanks, chunkRanks[chunkSize-uint64(carryover):chunkSize])
-	}
-	memsetU16(chunkRanks[carryover:chunkSize], 0)
-	limit := int64(chunkSize) - int64(config.EntrWinSize)
-	if limit > 0 {
-		for ; offset < uint64(limit); offset++ {
-			if offset % uint64(config.BlockSize) == 0 {
-				entropy = config.entr64InitInt(fileBuffer[offset:], ascii)
-			} else {
-				entropy = config.entr64IncInt(entropy, fileBuffer[offset-1:], ascii)
-			}
-			chunkRanks[offset] = uint16(Entr64Ranks[entropy>>EntrPower])
-		}
-	}
-}
-
-/**
- * Generate scores for a ranks chunk.
- */
-func (sd *sdbf) genChunkScores(chunkRanks []uint16, chunkSize uint64, chunkScores []uint16, scoreHisto []int32) {
-	popWin := uint64(config.PopWinSize)
-	var minPos uint64
-	minRank := chunkRanks[minPos]
-
-	memsetU16(chunkScores, 0)
-	if chunkSize > popWin {
-		for i := uint64(0); i < chunkSize - popWin; i++ {
-			if i > 0 && minRank > 0 {
-				for chunkRanks[i+popWin] >= minRank && i < minPos && i < chunkSize - popWin + 1 {
-					if chunkRanks[i+popWin] == minRank {
-						minPos = i + popWin
-					}
-					chunkScores[minPos]++
-					i++
-				}
-			}
-			minPos = i
-			minRank = chunkRanks[minPos]
-			for j := i+1; j < i+popWin; j++ {
-				if chunkRanks[j] < minRank && chunkRanks[i] > 0 {
-					minRank = chunkRanks[j]
-					minPos = j
-				} else if minPos == j-1 && chunkRanks[j] == minRank {
-					minPos = j
-				}
-			}
-			if chunkRanks[minPos] > 0 {
-				chunkScores[minPos]++
-			}
-		}
-		if scoreHisto != nil {
-			for i := uint64(0); i < chunkSize - popWin; i++ {
-				scoreHisto[chunkScores[i]]++
-			}
-		}
-	}
-}
-
-/**
- * Generate SHA1 hashes and add them to the SDBF--original stream version.
- */
-func (sd *sdbf) genChunkHash(fileBuffer []uint8, chunkPos uint64, chunkScores []uint16, chunkSize uint64) {
-	bfCount := sd.bfCount
-	lastCount := sd.lastCount
-	currBf := sd.Buffer[(bfCount-1)*sd.bfSize:]
-	var bigfiCount uint64
-
-	if chunkSize > uint64(config.PopWinSize) {
-		for i := uint64(0); i < chunkSize-uint64(config.PopWinSize); i++ {
-			if uint32(chunkScores[i]) > config.Threshold {
-				sha1Hash := u32sha1(fileBuffer[chunkPos+i:chunkPos+i+uint64(config.PopWinSize)])
-				bitsSet := bfSha1Insert(currBf, 0, sha1Hash)
-				// Avoid potentially repetitive features
-				if bitsSet == 0 {
-					continue
-				}
-				if sd.info != nil {
-					if sd.info.index != nil {
-						if !sd.info.index.InsertSha1(sha1Hash[:]) {
-							continue
-						}
-					}
-				}
-
-				// new style big filters...
-				inserted := sd.BigFilters[len(sd.BigFilters)-1].InsertSha1(sha1Hash[:])
-				if !inserted {
-					continue
-				}
-
-				lastCount++
-				bigfiCount++
-				if lastCount == sd.MaxElem {
-					// currBf += sd.bfSize todo: WTF
-					bfCount++
-					lastCount = 0
-				}
-				if bigfiCount == sd.BigFilters[len(sd.BigFilters)-1].MaxElem {
-					bf, err := NewBloomFilter(BigFilter, 5, BigFilterElem, 0.01)
-					if err != nil {
-						panic(err)
-					}
-					sd.BigFilters = append(sd.BigFilters, bf)
-					bigfiCount = 0
-				}
-			}
-		}
-	}
-
-	sd.bfCount = bfCount
-	sd.lastCount = lastCount
-}
-
-/**
- * Generate SHA1 hashes and add them to the SDBF--block-aligned version.
- */
-func (sd *sdbf) genBlockHash(fileBuffer []uint8, fileSize uint64, blockNum uint64, chunkScores []uint16,
-	blockSize uint64, hashTo *sdbf, rem uint32, threshold uint32, allowed int32) {
-	var hashCnt, maxOffset, numIndexes uint32
-
-	if rem > 0 {
-		maxOffset = rem
-	} else {
-		maxOffset = uint32(blockSize)
-	}
-	if hashTo.info != nil {
-		if hashTo.info.setList != nil {
-			numIndexes = uint32(len(hashTo.info.setList))
-		}
-	}
-	match := make([]uint32, numIndexes)
-	var hashIndex int
-	for i := uint32(0); i < maxOffset-config.PopWinSize && hashCnt < config.MaxElemDd; i++ {
-		if uint32(chunkScores[i]) > threshold && (uint32(chunkScores[i]) == threshold && allowed > 0) {
-			data := fileBuffer[blockNum*blockSize:] // Start of data
-			sha1Hash := u32sha1(data[i:i+config.PopWinSize])
-			bf := hashTo.Buffer[blockNum*uint64(hashTo.bfSize):] // BF to be filled
-			bitsSet := bfSha1Insert(bf, 0, sha1Hash)
-			if bitsSet == 0 { // Avoid potentially repetitive features
-				continue
-			}
-			if numIndexes == 0 {
-				if hashTo.info != nil && hashTo.info.index != nil {
-					hashTo.info.index.InsertSha1(sha1Hash[:])
-				}
-			} else {
-				if hashCnt % 4 == 0 {
-					var hashes [193][5]uint32
-					hashes[hashIndex][0] = sha1Hash[0]
-					hashes[hashIndex][1] = sha1Hash[1]
-					hashes[hashIndex][2] = sha1Hash[2]
-					hashes[hashIndex][3] = sha1Hash[3]
-					any := hashTo.checkIndexes(hashes[hashIndex][:], match)
-					if any {
-						hashIndex++
-					}
-					if hashIndex >= 192 {
-						hashIndex = 192 // no more than N matches per chunk
-					}
-				}
-			}
-			hashCnt++
-			if uint32(chunkScores[i]) == threshold {
-				allowed--
-			}
-		}
-	}
-	if numIndexes > 0 && !hashTo.info.searchFirst && !hashTo.info.searchDeep {
-		// set level only for plug into assistance
-		hashTo.printIndexes(fpThreshold, match, blockNum)
-	}
-
-	memsetU32(match, 0) // here: maybe useless
-	hashTo.elemCounts[blockNum] = uint16(hashCnt)
-}
-
-
-/**
- * Generate SDBF hash for a buffer--stream version.
- */
-func (sd *sdbf) genChunkSdbf(fileBuffer []uint8, fileSize uint64, chunkSize uint64) {
-	if chunkSize > uint64(config.PopWinSize) {
-		panic("chunkSize <= popWinSize")
-	}
-
-	buffSize := ((fileSize >> 11) + 1) << 8 // Estimate sdbf size (reallocate later)
-	sd.Buffer = make([]uint8, buffSize)
-
-	// Chunk-based computation
-	qt := fileSize / chunkSize
-	rem := fileSize % chunkSize
-
-	var chunkPos uint64
-	chunkRanks := make([]uint16, chunkSize)
-	chunkScores := make([]uint16, chunkSize)
-
-	for i := uint64(0); i < qt; i++ {
-		var scoreHisto [66]int32
-		sd.genChunkRanks(fileBuffer[chunkSize*i:], chunkSize, chunkRanks, 0)
-		sd.genChunkScores(chunkRanks, chunkSize, chunkScores, scoreHisto[:])
-
-		// Calculate thresholding paremeters
-		var sum uint32
-		for k := uint32(65); k >= config.Threshold; k-- {
-			if (sum <= sd.MaxElem) && (sum+uint32(scoreHisto[k]) > sd.MaxElem) {
-				break
-			}
-			sum += uint32(scoreHisto[k])
-		}
-		sd.genChunkHash(fileBuffer, chunkPos, chunkScores, chunkSize)
-		chunkPos += chunkSize
-	}
-	if rem > 0 {
-		sd.genChunkRanks(fileBuffer[qt*chunkSize:], rem, chunkRanks, 0)
-		sd.genChunkScores(chunkRanks, rem, chunkScores, nil)
-		sd.genChunkHash(fileBuffer, chunkPos, chunkScores, rem)
-	}
-
-	// Chop off last BF if its membership is too low (eliminates some FPs)
-	if sd.bfCount > 1 && sd.lastCount < sd.MaxElem/8 {
-		sd.bfCount--
-		sd.lastCount = sd.MaxElem
-	}
-
-	// Trim BF allocation to size
-	if uint64(sd.bfCount) * uint64(sd.bfSize) < buffSize {
-		sd.Buffer = sd.Buffer[:sd.bfCount*sd.bfSize]
-	}
-}
-
-/**
- * Worker thread for multi-threaded block hash generation.  // NOT iN CLASS?
- */
-func (sd *sdbf) threadGenBlockSdbf(index uint64, blockSize uint64, buffer []uint8, fileSize uint64, ch chan bool) {
-	var sum, allowed uint32
-	var scoreHisto [66]int32
-	chunkRanks := make([]uint16, blockSize)
-	chunkScores := make([]uint16, blockSize)
-
-	sd.genChunkRanks(buffer[blockSize*index:], blockSize, chunkRanks, 0)
-	sd.genChunkScores(chunkRanks, blockSize, chunkScores, scoreHisto[:])
-	var k uint32
-	for k = 65; k >= config.Threshold; k-- {
-		if sum <= config.MaxElem && (sum + uint32(scoreHisto[k]) > config.MaxElemDd) {
-			break
-		}
-		sum += uint32(scoreHisto[k])
-	}
-	allowed = config.MaxElemDd - sum
-	sd.genBlockHash(buffer, fileSize, index, chunkScores, blockSize, sd, 0, k, int32(allowed))
-
-	ch <- true
-}
-
-/**
-  dd-mode hash generation.
-*/
-func (sd *sdbf) genBlockSdbfMt(fileBuffer []uint8, fileSize uint64, blockSize uint64) {
-	qt := fileSize / blockSize
-	rem := fileSize % blockSize
-
-	hashPool := make([]chan bool, qt)
-	for i := range hashPool {
-		go sd.threadGenBlockSdbf(uint64(i), blockSize, fileBuffer, fileSize, hashPool[i])
-	}
-	for i := range hashPool {
-		<- hashPool[i]
-	}
-
-	for rem >= MinFileSize {
-		chunkRanks := make([]uint16, blockSize)
-		chunkScores := make([]uint16, blockSize)
-
-		sd.genChunkRanks(fileBuffer[blockSize*qt:], rem, chunkRanks, 0)
-		sd.genChunkScores(chunkRanks, rem, chunkScores, nil)
-		sd.genBlockHash(fileBuffer, fileSize, qt, chunkScores, blockSize, sd, uint32(rem), config.Threshold, int32(sd.MaxElem))
-	}
-}
-
-/**
- * Calculates the score between two digests
- */
-func (sd *sdbf) sdbfScore(sdbf1 *sdbf, sdbf2 *sdbf, sample uint32) uint32 {
-	var maxScore, scoreSum float64
-	var bfCount1, randOffset uint32
-
-	// todo:
-	return 0
-}
-
-/**
- * Given a BF and an SDBF, calculates the maximum match (0-100)
- */
-func (sd *sdbf) sdbfMaxScore(refSdbf *sdbf) float64 {
-	var score, maxScore float64
-	var s2, maxEst, cutOff uint32
-	bfSize := refSdbf.bfSize
-	var bf1, bf2 []uint16
-
-	s1 := sd.get
-
-}
-
-func (sd *sdbf) printIndexes(threshold uint32, matches []uint32, pos uint64) {
-	count := len(sd.info.setList)
-	any := false
-	var strBuilder strings.Builder
-	for i := 0; i < count; i++ {
-		if matches[i] > threshold {
-			strBuilder.WriteString(fmt.Sprintf("%s [%v] |%s|%v\n", sd.Name(), pos, sd.info.setList[i] // todo: implement set))
-			any = true
-		}
-	}
-}
-
-
-func (sd *sdbf) checkIndexes(sha1 []uint32, matches []uint32) bool {
-	count := len(sd.info.setList)
-	any := false
-
-	for i := 0; i < count; i++ {
-		if sd.info.setList[i] // todo: implement set
-	}
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
