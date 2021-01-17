@@ -23,6 +23,7 @@ build_release: clean
 	GOOS=darwin GOARCH=amd64 go build -o "dist/$(NAME)-darwin-amd64" -ldflags=$(LDFLAGS) $(GOFILES)
 	GOOS=linux GOARCH=amd64 go build -o "dist/$(NAME)-linux-amd64" -ldflags=$(LDFLAGS) $(GOFILES)
 	GOOS=windows GOARCH=amd64 go build -o "dist/$(NAME)-windows-amd64" -ldflags=$(LDFLAGS) $(GOFILES)
+	GOOS=linux GOARCH=arm64 go build -o "dist/$(NAME)-linux-arm64" -ldflags=$(LDFLAGS) $(GOFILES)
 
 test:
 	go test -v -coverprofile=coverage.txt -covermode=atomic .
