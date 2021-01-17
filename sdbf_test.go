@@ -73,6 +73,7 @@ func CreateSdbfTest(testName string, blockSize uint32, tmpDir string) func(t *te
 				var sd Sdbf
 				if tc.expectedErr != "" && err != nil {
 					assert.EqualError(t1, err, fmt.Sprintf(tc.expectedErr, tc.fileName))
+					return
 				} else if err == nil {
 					sdDigest, err := ioutil.ReadFile(fmt.Sprintf("testdata/%s/%s.sdbf", testName, tc.name))
 					require.NoError(t1, err)
@@ -84,33 +85,36 @@ func CreateSdbfTest(testName string, blockSize uint32, tmpDir string) func(t *te
 					assert.Equal(t1, tc.compareSelfScore, sd.Compare(sd))
 				} else {
 					require.Fail(t1, "invalid")
+					return
 				}
 
-				if sd != nil {
-					bf := sd.GetIndex().(*bloomFilter)
-					tmpFile := path.Join(tmpDir, fmt.Sprintf("%s-%s.idx", testName, tc.name))
-					require.NoError(t1, bf.WriteToFile(tmpFile))
+				sdbfParsed, err := ParseSdbfFromString(sd.String())
+				require.NoError(t1, err)
+				assert.Equal(t1, sd.String(), sdbfParsed.String())
 
-					bfFromIndexFileInt, err := NewBloomFilterFromIndexFile(tmpFile)
-					require.NoError(t, err)
-					bfFromIndexFile := bfFromIndexFileInt.(*bloomFilter)
+				bf := sd.GetIndex().(*bloomFilter)
+				tmpFile := path.Join(tmpDir, fmt.Sprintf("%s-%s.idx", testName, tc.name))
+				require.NoError(t1, bf.WriteToFile(tmpFile))
 
-					assert.Equal(t1, sha1.Sum(bf.buffer), sha1.Sum(bfFromIndexFile.buffer))
-					assert.Equal(t1, bf.hashCount, bfFromIndexFile.hashCount)
-					assert.Equal(t1, bf.bitMask, bfFromIndexFile.bitMask)
-					assert.Equal(t1, bf.compSize, bfFromIndexFile.compSize)
-					assert.Equal(t1, bf.name, bfFromIndexFile.name)
+				bfFromIndexFileInt, err := NewBloomFilterFromIndexFile(tmpFile)
+				require.NoError(t, err)
+				bfFromIndexFile := bfFromIndexFileInt.(*bloomFilter)
 
-					bfFromStringInt, err := NewBloomFilterFromString(bf.String())
-					assert.NoError(t1, err)
-					bfFromString := bfFromStringInt.(*bloomFilter)
+				assert.Equal(t1, sha1.Sum(bf.buffer), sha1.Sum(bfFromIndexFile.buffer))
+				assert.Equal(t1, bf.hashCount, bfFromIndexFile.hashCount)
+				assert.Equal(t1, bf.bitMask, bfFromIndexFile.bitMask)
+				assert.Equal(t1, bf.compSize, bfFromIndexFile.compSize)
+				assert.Equal(t1, bf.name, bfFromIndexFile.name)
 
-					assert.Equal(t1, sha1.Sum(bf.buffer), sha1.Sum(bfFromString.buffer))
-					assert.Equal(t1, bf.hashCount, bfFromString.hashCount)
-					assert.Equal(t1, bf.bitMask, bfFromString.bitMask)
-					assert.Equal(t1, bf.compSize, bfFromString.compSize)
-					assert.Equal(t1, bf.name, bfFromString.name)
-				}
+				bfFromStringInt, err := NewBloomFilterFromString(bf.String())
+				assert.NoError(t1, err)
+				bfFromString := bfFromStringInt.(*bloomFilter)
+
+				assert.Equal(t1, sha1.Sum(bf.buffer), sha1.Sum(bfFromString.buffer))
+				assert.Equal(t1, bf.hashCount, bfFromString.hashCount)
+				assert.Equal(t1, bf.bitMask, bfFromString.bitMask)
+				assert.Equal(t1, bf.compSize, bfFromString.compSize)
+				assert.Equal(t1, bf.name, bfFromString.name)
 			})
 		}
 	}

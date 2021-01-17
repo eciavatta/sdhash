@@ -3,16 +3,18 @@ package sdhash
 import "math"
 
 var (
-	BfSize         uint32 = 256
-	PopWinSize     uint32 = 64
-	MaxElem        uint32 = 160
-	MaxElemDd      uint32 = 192
-	Threshold      uint32 = 16
-	BlockSize             = 4 * kB
-	EntropyWinSize        = 64
+	BfSize         uint32 = 256    // BfSize is the size of each bloom filters
+	PopWinSize     uint32 = 64     // PopWinSize is the size of the sliding window used to hash input.
+	MaxElem        uint32 = 160    // MaxElem is maximum number of elements in each bloom filter in stream mode.
+	MaxElemDd      uint32 = 192    // MaxElem is maximum number of elements in each bloom filter in block mode.
+	Threshold      uint32 = 16     // Threshold is the minimum value of the score above witch chunks are considered.
+	BlockSize             = 4 * kB // BlockSize is the block size used to generate chunk ranks.
+	EntropyWinSize        = 64     // EntropyWinSize is the entropy window size used to generate chunk ranks.
 )
 
 const (
+	MinFileSize = 512 // Minimum file size for a Sdbf file.
+
 	kB           = 1024
 	mB           = kB * kB
 	bins         = 1000
@@ -20,7 +22,6 @@ const (
 	entropyScale = bins * (1 << entropyPower)
 	minElemCount = 16
 
-	minFileSize   = 512
 	bigFilter     = 16384
 	bigFilterElem = 8738
 

@@ -230,7 +230,7 @@ func (sd *sdbf) generateBlockSdbf(fileBuffer []uint8, ) {
 
 	if sd.searchIndexes != nil {
 		blockCount := qt
-		if rem >= minFileSize {
+		if rem >= MinFileSize {
 			blockCount++
 		}
 		sd.searchIndexesResults = make([][]uint32, blockCount)
@@ -244,7 +244,7 @@ func (sd *sdbf) generateBlockSdbf(fileBuffer []uint8, ) {
 		<-ch
 	}
 
-	if rem >= minFileSize {
+	if rem >= MinFileSize {
 		chunkRanks := make([]uint16, blockSize)
 		chunkScores := make([]uint16, blockSize)
 
@@ -362,6 +362,7 @@ func (sd *sdbf) sdbfMaxScore(refSdbf *sdbf, refIndex uint32, targetSdbf *sdbf) f
 	return maxScore
 }
 
+// checkIndexes checks if some of the search blooms filters match.
 func (sd *sdbf) checkIndexes(sha1 []uint32, matches []uint32) bool {
 	any := false
 

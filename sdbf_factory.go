@@ -9,6 +9,7 @@ import (
 	"strings"
 )
 
+// SdbfFactory can be used to create a Sdbf from a binary source.
 type SdbfFactory interface {
 	WithBlockSize(blockSize uint32) SdbfFactory
 	WithInitialIndex(initialIndex BloomFilter) SdbfFactory
@@ -34,7 +35,7 @@ func CreateSdbfFromFilename(filename string) (SdbfFactory, error) {
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("%s is not a regular file", filename)
 	}
-	if info.Size() < minFileSize {
+	if info.Size() < MinFileSize {
 		return nil, fmt.Errorf("%s is too small", filename)
 	}
 	if buffer, err := ioutil.ReadFile(filename); err == nil {
@@ -51,8 +52,8 @@ func CreateSdbfFromFilename(filename string) (SdbfFactory, error) {
 
 // CreateSdbfFromBytes returns a factory which can produce a Sdbf from a bytes buffer.
 func CreateSdbfFromBytes(buffer []uint8) (SdbfFactory, error) {
-	if len(buffer) < minFileSize {
-		return nil, fmt.Errorf("the length of buffer must be greater than %d", minFileSize)
+	if len(buffer) < MinFileSize {
+		return nil, fmt.Errorf("the length of buffer must be greater than %d", MinFileSize)
 	}
 	return &sdbfFactory{
 		buffer: buffer,

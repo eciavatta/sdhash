@@ -10,35 +10,29 @@ import (
 )
 
 type sdbfSet struct {
-	Index        sdhash.BloomFilter
+	index        sdhash.BloomFilter
 	items        []sdhash.Sdbf
 	sep          byte
 	addHashMutex sync.Mutex
 }
 
-/**
-  Creates empty sdbf_set with an index
-  \param index to insert new items into
-*/
+// NewSdbfSetFromIndex creates an empty sdbf set with an initial sdhash.BloomFilter index.
 func NewSdbfSetFromIndex(index sdhash.BloomFilter) *sdbfSet {
 	return &sdbfSet{
-		Index: index,
+		index: index,
 		sep:   '|',
 	}
 }
 
-/**
-  Loads all sdbfs from a file into a new set
-  \param fname name of sdbf file
-*/
-func NewSdbfSetFromFileName(fname string) *sdbfSet {
+// NewSdbfSetFromFileName loads all sdhash.Sdbf from a file into a new set.
+func NewSdbfSetFromFileName(filename string) (*sdbfSet, error) {
 	ss := &sdbfSet{
-		Index: nil, // right now we cannot read-in an index, but we can set one later
+		index: nil, // right now we cannot read-in an index, but we can set one later
 		sep:   '|',
 		items: make([]sdhash.Sdbf, 0),
 	}
 
-	if file, err := os.Open(fname); err == nil {
+	if file, err := os.Open(filename); err == nil {
 		if stat, err := file.Stat(); err == nil && stat.Mode().IsRegular() {
 			scanner := bufio.NewScanner(file)
 			for scanner.Scan() {
@@ -46,41 +40,32 @@ func NewSdbfSetFromFileName(fname string) *sdbfSet {
 				if len(line) == 0 {
 					break
 				}
-				ss.items = append(ss.items, nil) // todo:
+				var sdbf sdhash.Sdbf
+				if sdbf, err = sdhash.ParseSdbfFromString(line); err != nil {
+					return nil, err
+				}
+				ss.items = append(ss.items, sdbf)
 			}
 		}
 		_ = file.Close()
 	}
 
-	return ss
+	return ss, nil
 }
 
-/**
-  Adds a single hash to this set
-  \param hash an existing sdbf hash
-*/
+// AddHash add a sdhash.Sdbf to the set.
 func (ss *sdbfSet) AddHash(hash sdhash.Sdbf) {
 	ss.addHashMutex.Lock()
 	ss.items = append(ss.items, hash)
 	ss.addHashMutex.Unlock()
 }
 
-func (ss *sdbfSet) Details() string {
-	return "" // todo:
-}
-
-/**
-  Number of items in this set
-  \returns uint64_t number of items in this set
-*/
+// Size returns the number of items in the set.
 func (ss *sdbfSet) Size() uint64 {
 	return uint64(len(ss.items))
 }
 
-/**
-  Generates a string which contains the output-encoded sdbfs in this set
-  \returns std::string containing sdbfs.
-*/
+// String generate a string which contains the output-encoded sdhash.Sdbf in the set.
 func (ss *sdbfSet) String() string {
 	var sb strings.Builder
 	for _, sd := range ss.items {
@@ -89,22 +74,13 @@ func (ss *sdbfSet) String() string {
 	return sb.String()
 }
 
-/**
-  Change comparison output separator
-  \param sep character separator for output
-*/
+// SetSeparator change the comparison output separator.
 func (ss *sdbfSet) SetSeparator(sep byte) {
 	ss.sep = sep
 }
 
-/**
-  Compares each sdbf object in target to every other sdbf object in target
-  and returns the results as a list stored in a string
-
-  \param threshold output threshold, defaults to 1
-  \param thread_count processor threads to use, 0 for all available
-  \returns std::string result listing
-*/
+// CompareAll compares each sdhash.Sdbf in the set to every sdhash.Sdbf in the set.
+// Returns the results as a list stored in a string.
 func (ss *sdbfSet) CompareAll(threshold int, fast bool) string {
 	end := len(ss.items)
 	var out strings.Builder
@@ -115,18 +91,14 @@ func (ss *sdbfSet) CompareAll(threshold int, fast bool) string {
 		}
 	}
 	for i := 0; i < end; i++ {
-		for j := 0; i < end; i++ {
+		for j := i; j < end; j++ {
 			if i == j {
 				continue
 			}
 			score := ss.items[i].Compare(ss.items[j])
 			if score >= threshold {
 				out.WriteString(fmt.Sprintf("%s%c%s", ss.items[i].Name(), ss.sep, ss.items[j].Name()))
-				if score != -1 {
-					out.WriteString(fmt.Sprintf("%c%03d\n", ss.sep, score))
-				} else {
-					out.WriteString(fmt.Sprintf("%c%d\n", ss.sep, score))
-				}
+				out.WriteString(fmt.Sprintf("%c%03d\n", ss.sep, score))
 			}
 		}
 	}
@@ -134,16 +106,8 @@ func (ss *sdbfSet) CompareAll(threshold int, fast bool) string {
 	return out.String()
 }
 
-/**
-  Compares each sdbf object in other to each object in this set, and returns
-  the results as a list stored in a string.
-
-  \param other set to compare to
-  \param threshold output threshold, defaults to 1
-  \param sample_size size of bloom filter sample. send 0 for no sampling
-  \param thread_count processor threads to use, 0 for all available
-  \returns string result listing
-*/
+// Compare compares each sdhash.Sdbf in the set to every sdhash.Sdbf in the other set.
+// Returns the results as a list stored in a string.
 func (ss *sdbfSet) CompareTo(other *sdbfSet, threshold int, sampleSize uint32, fast bool) string {
 	tend := other.Size()
 	qend := ss.Size()
@@ -160,15 +124,11 @@ func (ss *sdbfSet) CompareTo(other *sdbfSet, threshold int, sampleSize uint32, f
 		}
 	}
 	for i := uint64(0); i < qend; i++ {
-		for j := uint64(0); i < tend; i++ {
+		for j := uint64(0); j < tend; j++ {
 			score := ss.items[i].CompareSample(other.items[j], sampleSize)
 			if score >= threshold {
 				out.WriteString(fmt.Sprintf("%s%c%s", ss.items[i].Name(), ss.sep, other.items[j].Name()))
-				if score != -1 {
-					out.WriteString(fmt.Sprintf("%c%03d\n", ss.sep, score))
-				} else {
-					out.WriteString(fmt.Sprintf("%c%d\n", ss.sep, score))
-				}
+				out.WriteString(fmt.Sprintf("%c%03d\n", ss.sep, score))
 			}
 		}
 	}

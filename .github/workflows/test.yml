@@ -1,11 +1,11 @@
-on: [push, pull_request]
+on: [ push, pull_request ]
 name: Test library
 jobs:
   test:
     strategy:
       matrix:
-        go-version: [1.15.x]
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: [ 1.15.x ]
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Go
