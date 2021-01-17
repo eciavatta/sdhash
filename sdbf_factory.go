@@ -11,10 +11,23 @@ import (
 
 // SdbfFactory can be used to create a Sdbf from a binary source.
 type SdbfFactory interface {
+
+	// WithBlockSize sets the block size for the block mode.
+	// The default value of 0 involves in a Sdbf generated in stream mode.
 	WithBlockSize(blockSize uint32) SdbfFactory
+
+	// WithInitialIndex sets the initial BloomFilter index.
+	// Without setting an initial index the factory creates a new empty BloomFilter.
 	WithInitialIndex(initialIndex BloomFilter) SdbfFactory
+
+	// WithSearchIndexes sets a list of BloomFilter which are checked for similarity during digesting process.
+	// Without setting a value the searching operation during the digesting process is disabled.
 	WithSearchIndexes(searchIndexes []BloomFilter) SdbfFactory
+
+	// WithName sets the name of the Sdbf in the output.
 	WithName(name string) SdbfFactory
+
+	// Compute start the digesting process and provide a Sdbf with the result.
 	Compute() Sdbf
 }
 
@@ -70,34 +83,26 @@ func CreateSdbfFromReader(r io.Reader) (SdbfFactory, error) {
 	return CreateSdbfFromBytes(buffer)
 }
 
-// WithBlockSize sets the block size for the block mode.
-// The default value of 0 involves in a Sdbf generated in stream mode.
 func (sdf *sdbfFactory) WithBlockSize(blockSize uint32) SdbfFactory {
 	sdf.ddBlockSize = blockSize
 	return sdf
 }
 
-// WithInitialIndex sets the initial BloomFilter index.
-// Without setting an initial index the factory creates a new empty BloomFilter.
 func (sdf *sdbfFactory) WithInitialIndex(initialIndex BloomFilter) SdbfFactory {
 	sdf.initialIndex = initialIndex
 	return sdf
 }
 
-// WithSearchIndexes sets a list of BloomFilter which are checked for similarity during digesting process.
-// Without setting a value the searching operation during the digesting process is disabled.
 func (sdf *sdbfFactory) WithSearchIndexes(searchIndexes []BloomFilter) SdbfFactory {
 	sdf.searchIndexes = searchIndexes
 	return sdf
 }
 
-// WithName sets the name of the Sdbf in the output.
 func (sdf *sdbfFactory) WithName(name string) SdbfFactory {
 	sdf.name = strings.ReplaceAll(name, ":", "$")
 	return sdf
 }
 
-// Compute start the digesting process and provide a Sdbf with the result.
 func (sdf *sdbfFactory) Compute() Sdbf {
 	return createSdbf(sdf.buffer, sdf.ddBlockSize, sdf.initialIndex, sdf.searchIndexes, sdf.name)
 }

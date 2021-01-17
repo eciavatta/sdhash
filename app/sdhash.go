@@ -13,11 +13,12 @@ import (
 	"strings"
 )
 
+// Version is filled with the version of the tool during compile process.
 var Version string
 
 const (
-	KB = 1024
-	MB = KB * KB
+	kb = 1024
+	mb = kb * kb
 )
 
 var deep = flag.Bool("r", false, "generate SDBFs from directories and files")
@@ -52,7 +53,7 @@ func validateArgs() {
 	if *segmentSize <= 0 {
 		*segmentSize = 128
 	}
-	*segmentSize *= MB
+	*segmentSize *= mb
 	if *fast {
 		logFatal("not implemented")
 	}
@@ -257,7 +258,7 @@ func listFilesToHash(inputList []string) (map[string]os.FileInfo, error) {
 			logVerbose("adding %s to files to hash", path)
 			filesToHash[path] = info
 			if info.Size() > int64(*segmentSize) {
-				logWarning("file %s will be segmented in %d MB chunks prior to hashing", path, *segmentSize/MB)
+				logWarning("file %s will be segmented in %d mb chunks prior to hashing", path, *segmentSize/mb)
 			}
 		} else {
 			logWarning("skipping %s because is not a regular file", path)

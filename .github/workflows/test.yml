@@ -1,5 +1,5 @@
 on: [ push, pull_request ]
-name: Test library
+name: tests
 jobs:
   test:
     strategy:

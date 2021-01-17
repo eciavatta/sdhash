@@ -22,11 +22,22 @@ var bitMasks32 = []uint32{
 	0x01FFFFFF, 0x03FFFFFF, 0x07FFFFFF, 0x0FFFFFFF, 0x1FFFFFFF, 0x3FFFFFFF, 0x7FFFFFFF, 0xFFFFFFFF,
 }
 
+// BloomFilter represent a bloom filter and it is used to calculate similarity digests.
 type BloomFilter interface {
+
+	// ElemCount returns the number of elements in the BloomFilter.
 	ElemCount() uint64
+
+	// MaxElem returns the maximum number of elements that can be present in the BloomFilter.
 	MaxElem() uint64
+
+	// BitsPerElem returns the number of bits for each elements of the BloomFilter.
 	BitsPerElem() float64
+
+	// WriteToFile serialize the current BloomFilter to a file specified by filename.
 	WriteToFile(filename string) error
+
+	// String returns the serialized representation of the BloomFilter.
 	String() string
 
 	insertSha1(sha1 []uint32) bool
@@ -142,22 +153,18 @@ func newBloomFilterFromExistingData(data []uint8, bfElemCount int) *bloomFilter 
 	return bf
 }
 
-// ElemCount returns the number of elements in the BloomFilter.
 func (bf *bloomFilter) ElemCount() uint64 {
 	return bf.bfElemCount
 }
 
-// MaxElem returns the maximum number of elements that can be present in the BloomFilter.
 func (bf *bloomFilter) MaxElem() uint64 {
 	return bf.maxElem
 }
 
-// BitsPerElem returns the number of bits for each elements of the BloomFilter.
 func (bf *bloomFilter) BitsPerElem() float64 {
 	return float64(len(bf.buffer)<<3) / float64(bf.bfElemCount)
 }
 
-// WriteToFile serialize the current BloomFilter to a file specified by filename.
 func (bf *bloomFilter) WriteToFile(filename string) error {
 	f, err := os.Create(filename)
 	if err != nil {
@@ -186,7 +193,6 @@ func (bf *bloomFilter) WriteToFile(filename string) error {
 	return nil
 }
 
-// String returns the serialized representation of the BloomFilter.
 func (bf *bloomFilter) String() string {
 	var header string
 	var buf []byte

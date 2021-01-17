@@ -19,10 +19,10 @@ func hashFiles(files map[string]os.FileInfo, searchIndexes []sdhash.BloomFilter)
 		// todo: dd mode chunks -- hint: io.ReadFull()
 		if factory, err := sdhash.CreateSdbfFromFilename(filePath); err == nil {
 			var ddBlockSize uint32
-			if (*blockSize < 0 && file.Size() < 16*MB) || *blockSize == 0 {
+			if (*blockSize < 0 && file.Size() < 16*mb) || *blockSize == 0 {
 				ddBlockSize = 0
 			} else {
-				ddBlockSize = uint32(*blockSize) * KB
+				ddBlockSize = uint32(*blockSize) * kb
 			}
 			logVerbose("digesting file %s using block-size %d", filePath, ddBlockSize)
 			sdbf := factory.WithBlockSize(ddBlockSize).WithInitialIndex(rollIndex).WithSearchIndexes(searchIndexes).Compute()

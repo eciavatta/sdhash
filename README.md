@@ -1,10 +1,10 @@
 # sdhash
 
-[![sdhash Actions Status](https://github.com/eciavatta/sdhash/workflows/Test/badge.svg)](https://github.com/eciavatta/sdhash/actions)
-[![codecov](https://codecov.io/gh/eciavatta/sdhash/branch/develop/graph/badge.svg)](https://codecov.io/gh/eciavatta/sdhash)
+[![Tests](https://github.com/eciavatta/sdhash/workflows/tests/badge.svg)](https://github.com/eciavatta/sdhash/actions)
+[![codecov](https://codecov.io/gh/eciavatta/sdhash/branch/main/graph/badge.svg)](https://codecov.io/gh/eciavatta/sdhash)
 [![Go Report Card](https://goreportcard.com/badge/github.com/eciavatta/sdhash)](https://goreportcard.com/report/github.com/eciavatta/sdhash)
 [![GoDoc](https://pkg.go.dev/badge/github.com/eciavatta/sdhash?status.svg)](https://pkg.go.dev/github.com/eciavatta/sdhash?tab=doc)
-[![Release](https://img.shields.io/github/release/eciavatta/sdhash.svg?style=flat-square)](https://github.com/eciavatta/sdhash/releases)
+[![Release](https://img.shields.io/github/release/eciavatta/sdhash.svg)](https://github.com/eciavatta/sdhash/releases)
 ![Language](https://img.shields.io/badge/language-go-blue)
 ![License](https://img.shields.io/github/license/eciavatta/sdhash)
 
@@ -48,13 +48,13 @@ import (
 func main() {
 	factoryA, _ := sdhash.CreateSdbfFromFilename("a.bin")
 	sdbfA := factoryA.Compute()
-	
+
 	factoryB, _ := sdhash.CreateSdbfFromFilename("b.bin")
 	sdbfB := factoryB.Compute()
-	
+
 	fmt.Println(sdbfA.String())
 	fmt.Println(sdbfB.String())
-	fmt.Println(sdbfA.Compare(sdbfB))	
+	fmt.Println(sdbfA.Compare(sdbfB))
 }
 ```
 

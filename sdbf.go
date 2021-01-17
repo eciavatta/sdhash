@@ -14,16 +14,39 @@ import (
 
 // Sdbf represent the similarity digest of a file and can be compared for similarity to others Sdbf.
 type Sdbf interface {
+
+	// Name of the of the file or data this Sdbf represents.
 	Name() string
+
+	// Size of the hash data for this Sdbf.
 	Size() uint64
+
+	// InputSize of the data that the hash was generated from.
 	InputSize() uint64
+
+	// FilterCount returns the number of bloom filters count.
+	FilterCount() uint32
+
 	// Compare two Sdbf and provide a similarity score ranges between 0 and 100.
 	// A score of 0 means that the two files are very different, a score of 100 means that the two files are equals.
 	Compare(other Sdbf) int
+
+	// CompareSample compare two Sdbf with sampling and provide a similarity score ranges between 0 and 100.
+	// A score of 0 means that the two files are very different, a score of 100 means that the two files are equals.
 	CompareSample(other Sdbf, sample uint32) int
+
+	// String returns the encoded Sdbf as a string.
 	String() string
+
+	// GetIndex returns the BloomFilter index used during the digesting process.
 	GetIndex() BloomFilter
+
+	// GetSearchIndexesResults returns search indexes results.
+	// The return value is an array of size == len(searchIndexes), and each elements has another array of length bfCount.
 	GetSearchIndexesResults() [][]uint32
+
+	// Fast modify the bloom filter buffer for faster comparison.
+	// Warning: the operation overwrite the original buffer.
 	Fast()
 }
 
@@ -214,17 +237,14 @@ func createSdbf(buffer []uint8, ddBlockSize uint32, initialIndex BloomFilter, se
 	return sd
 }
 
-// Name of the of the file or data this Sdbf represents.
 func (sd *sdbf) Name() string {
 	return sd.hashName
 }
 
-// Size of the hash data for this Sdbf.
 func (sd *sdbf) Size() uint64 {
 	return uint64(sd.bfSize) * uint64(sd.bfCount)
 }
 
-// InputSize of the data that the hash was generated from.
 func (sd *sdbf) InputSize() uint64 {
 	return sd.origFileSize
 }
@@ -233,13 +253,10 @@ func (sd *sdbf) Compare(other Sdbf) int {
 	return sd.CompareSample(other, 0)
 }
 
-// CompareSample compare two Sdbf with sampling and provide a similarity score ranges between 0 and 100.
-// A score of 0 means that the two files are very different, a score of 100 means that the two files are equals.
 func (sd *sdbf) CompareSample(other Sdbf, sample uint32) int {
 	return sd.sdbfScore(sd, other.(*sdbf), sample)
 }
 
-// String returns the encoded Sdbf as a string.
 func (sd *sdbf) String() string {
 	var sb strings.Builder
 	if sd.elemCounts == nil {
@@ -272,24 +289,18 @@ func (sd *sdbf) String() string {
 	return sb.String()
 }
 
-// GetIndex returns the BloomFilter index used during the digesting process.
 func (sd *sdbf) GetIndex() BloomFilter {
 	return sd.index
 }
 
-// GetSearchIndexesResults returns search indexes results.
-// The return value is an array of size == len(searchIndexes), and each elements has another array of length bfCount.
 func (sd *sdbf) GetSearchIndexesResults() [][]uint32 {
 	return sd.searchIndexesResults
 }
 
-// FilterCount returns the number of bloom filters count.
 func (sd *sdbf) FilterCount() uint32 {
 	return sd.bfCount
 }
 
-// Fast modify the bloom filter buffer for faster comparison.
-// Warning: the operation overwrite the original buffer.
 func (sd *sdbf) Fast() {
 	for i := uint32(0); i < sd.bfCount; i++ {
 		data := sd.cloneFilter(i)
